@@ -36,6 +36,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "/quality — الجودة الافتراضية\n"
             "/cancel — إلغاء التحميل الحالي"
         ),
+        "must_join": (
+            "<b>🔐 اشترك أولاً</b>\n\n"
+            "لاستخدام البوت، اشترك في القنوات التالية ثم اضغط "
+            "<b>تحققت ✅</b>:"
+        ),
+        # Shown in a popup alert, which renders plain text only.
+        "still_missing": "⚠️ لم تشترك بعد في جميع القنوات. اشترك ثم اضغط «تحققت ✅» مرة أخرى.",
+        "join_verified": "✅ تم التحقق، أهلاً بك! أرسل رابط الفيديو الآن.",
+        "btn_join": "📢 {title}",
+        "btn_verify": "تحققت ✅",
+        "err_disk": (
+            "💾 مساحة السيرفر ممتلئة مؤقتاً. حاول بعد قليل."
+        ),
+        "shared_wait": "⏳ هذا الفيديو قيد التحميل لمستخدم آخر، سيصلك فور جهوزه...",
         "not_allowed": "🚫 هذا البوت خاص، ولا تملك صلاحية استخدامه.",
         "admin_only": "🚫 هذا الأمر للمشرفين فقط.",
         "no_url": (
@@ -142,6 +156,18 @@ STRINGS: dict[str, dict[str, str]] = {
             "/quality — default quality\n"
             "/cancel — cancel the current download"
         ),
+        "must_join": (
+            "<b>🔐 Join first</b>\n\n"
+            "To use this bot, join the channels below and then tap "
+            "<b>I joined ✅</b>:"
+        ),
+        # Shown in a popup alert, which renders plain text only.
+        "still_missing": "⚠️ You haven't joined all of them yet. Join, then tap \"I joined\" again.",
+        "join_verified": "✅ Verified, welcome! Send a video link now.",
+        "btn_join": "📢 {title}",
+        "btn_verify": "I joined ✅",
+        "err_disk": "💾 The server is temporarily out of space. Try again shortly.",
+        "shared_wait": "⏳ Someone else is already downloading this; you'll get it as soon as it's ready...",
         "not_allowed": "🚫 This bot is private and you're not on the allow-list.",
         "admin_only": "🚫 This command is for admins only.",
         "no_url": (

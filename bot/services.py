@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from telegram.ext import Application, CallbackContext
 
 from .config import Settings
+from .inflight import InFlight
 from .jobs import JobRegistry
+from .membership import MembershipGate
 from .storage import Storage
 from .throttle import Throttle
 
@@ -20,6 +22,8 @@ class Services:
     storage: Storage
     throttle: Throttle
     jobs: JobRegistry
+    gate: MembershipGate
+    inflight: InFlight
 
 
 def attach(application: Application, services: Services) -> None:

@@ -95,6 +95,10 @@ class Settings:
     max_duration_seconds: int
     max_playlist_items: int
     max_attempts: int
+    required_channels: str
+    membership_cache_seconds: float
+    membership_fail_open: bool
+    min_free_disk_mb: int
     cache_ttl_hours: int
     transcode_oversized: bool
     default_language: str
@@ -162,6 +166,10 @@ def load_settings(*, require_token: bool = True) -> Settings:
         max_duration_seconds=_number("MAX_DURATION_SECONDS", 3 * 60 * 60),
         max_playlist_items=_number("MAX_PLAYLIST_ITEMS", 1, minimum=1),
         max_attempts=_number("MAX_DOWNLOAD_ATTEMPTS", 4, minimum=1),
+        required_channels=_text("REQUIRED_CHANNELS"),
+        membership_cache_seconds=_decimal("MEMBERSHIP_CACHE_SECONDS", 300.0),
+        membership_fail_open=_flag("MEMBERSHIP_FAIL_OPEN", True),
+        min_free_disk_mb=_number("MIN_FREE_DISK_MB", 1024),
         cache_ttl_hours=_number("CACHE_TTL_HOURS", 72),
         transcode_oversized=_flag("TRANSCODE_OVERSIZED", True),
         default_language=language,

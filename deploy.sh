@@ -19,13 +19,20 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.5"
+SCRIPT_REVISION="2026-10-05.6"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
 # 2024 that current sites reject.
 MIN_PYTHON_MINOR="${MIN_PYTHON_MINOR:-10}"
 PYTHON_SERIES="${PYTHON_SERIES:-3.12}"
+
+# Channels a user must join before the bot answers them. Edit in .env later.
+REQUIRED_CHANNELS="${REQUIRED_CHANNELS:-@nextgenshop1,@Nexus_tv_1}"
+
+# Re-encoding is CPU-bound, so the worker count tracks the core count.
+# More workers than cores makes everyone slower, not faster.
+WORKERS="${WORKERS:-$(nproc 2>/dev/null || echo 2)}"
 
 ENV_FILE="$INSTALL_DIR/.env"
 VENV_DIR="$INSTALL_DIR/.venv"
@@ -39,6 +46,12 @@ PYTHON_DIR="$INSTALL_DIR/python"
 # the exception to this one command keeps it out of root's global gitconfig.
 git_repo() {
     git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" "$@"
+}
+
+set_env_default() {
+    local key="$1" value="$2"
+    grep -qE "^${key}=.+" "$ENV_FILE" && return 0
+    set_env_var "$key" "$value"
 }
 
 set_env_var() {
@@ -260,6 +273,10 @@ fi
 set_env_var WORK_DIR "/tmp/jalal-downloads"
 set_env_var DATABASE_PATH "$DATA_DIR/bot.sqlite3"
 
+# Defaults only: once set, these are yours to edit in .env.
+set_env_default REQUIRED_CHANNELS "$REQUIRED_CHANNELS"
+set_env_default MAX_CONCURRENT_DOWNLOADS "$WORKERS"
+
 # --------------------------------------------------------------- ownership
 say "Setting ownership and permissions"
 
@@ -287,6 +304,9 @@ Description=Telegram social media video downloader bot
 Documentation=$REPO_URL
 After=network-online.target
 Wants=network-online.target
+# systemd gives up after 5 restarts in 10s by default. This bot is meant to
+# stay up, so let it keep retrying; RestartSec paces the attempts.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -305,6 +325,8 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=$VENV_DIR/bin/python -m bot
 Restart=always
 RestartSec=10
+# Do not let a wedged shutdown delay the restart.
+TimeoutStopSec=30
 # Transcoding is CPU-hungry; stay out of the way of everything else.
 Nice=10
 

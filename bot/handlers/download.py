@@ -16,6 +16,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from .. import media, services
+from ..inflight import FAILED, SharedUpload
 from ..downloader import (
     DownloadCancelled,
     DownloadFailure,
@@ -65,6 +66,19 @@ async def guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> UserPrefs
         )
         logger.info("rejected user %s (not on allow-list)", user.id)
         return None
+
+    # Admins are never gated; they are the ones who have to fix a broken gate.
+    if svc.gate.enabled and not svc.settings.is_admin(user.id):
+        if await svc.gate.missing_for(context.bot, user.id):
+            await message.reply_text(
+                t(prefs.language, "must_join"),
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboards.join_keyboard(
+                    prefs.language, svc.gate.channels
+                ),
+            )
+            return None
+
     return prefs
 
 
@@ -191,6 +205,30 @@ async def on_quality_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await _spawn_job(context, query.message, choice.url, quality, prefs)
 
 
+async def on_join_verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The 'I joined' button: re-check for real, ignoring the cached verdict."""
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        if query is not None:
+            await query.answer()
+        return
+
+    svc = services.of(context)
+    prefs = await svc.storage.get_user(user.id)
+
+    svc.gate.forget(user.id)
+    missing = await svc.gate.missing_for(context.bot, user.id)
+
+    if missing:
+        # An alert shows plain text, so this string carries no markup.
+        await query.answer(t(prefs.language, "still_missing"), show_alert=True)
+        return
+
+    await query.answer()
+    await _edit(query.message, t(prefs.language, "join_verified"))
+
+
 async def on_dismiss(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """The user closed a quality prompt."""
     query = update.callback_query
@@ -310,12 +348,35 @@ async def _run_job(
     )
     job_dir = svc.settings.work_dir / f"job-{uuid.uuid4().hex[:12]}"
 
+    # Keyed on the URL, because that is all a second requester knows before
+    # anything has been downloaded.
+    key = f"{_cache_namespace(url)}:{quality}"
+    shared_result = FAILED
+    lead: Any = None
+
     try:
         async with svc.throttle.user_slot(prefs.user_id):
             # A cached upload skips the network entirely.
-            key = f"{_cache_namespace(url)}:{quality}"
             if await _try_cached(context, chat_id, status_message, key, language):
                 return
+
+            # Someone may already be fetching this exact thing. Wait for
+            # their result rather than downloading identical bytes again.
+            running = svc.inflight.follow(key)
+            if running is not None:
+                reporter.set_stage("shared_wait")
+                await reporter.flush()
+                shared = await svc.inflight.wait_for(running)
+                if shared.usable:
+                    await _send_shared(context, chat_id, shared)
+                    await svc.storage.bump("cache_hits")
+                    await _edit(status_message, t(language, "cached"))
+                    return
+                # The leader failed; fall through and try it ourselves.
+
+            lead = svc.inflight.lead(key)
+
+            _check_disk(svc.settings)
 
             if svc.throttle.global_busy:
                 reporter.set_stage("queued", position=svc.throttle.waiting + 1)
@@ -337,8 +398,9 @@ async def _run_job(
                     max_attempts=svc.settings.max_attempts,
                 )
 
-                # Now that we know the real id, use the precise cache key.
-                key = f"{result.extractor.lower()}:{result.video_id}:{quality}"
+                # The precise key also catches the same video arriving by a
+                # different URL form (youtu.be versus youtube.com).
+                precise_key = f"{result.extractor.lower()}:{result.video_id}:{quality}"
 
                 reporter.set_stage("processing")
                 await reporter.flush()
@@ -355,8 +417,9 @@ async def _run_job(
                     context, chat_id, url, result, payload, language
                 )
 
-        await _finish(
-            context, status_message, sent, key, result, language, prefs.user_id
+        shared_result = await _finish(
+            context, status_message, sent, [key, precise_key], result,
+            language, prefs.user_id,
         )
 
     except DownloadCancelled:
@@ -385,6 +448,8 @@ async def _run_job(
         logger.exception("job crashed for %s", url)
         await _edit(status_message, t(language, "err_generic", reason=escape(str(exc)[:200])))
     finally:
+        if lead is not None:
+            svc.inflight.settle(key, lead, shared_result)
         await reporter.stop()
         await asyncio.to_thread(shutil.rmtree, job_dir, True)
 
@@ -591,12 +656,15 @@ async def _finish(
     context: ContextTypes.DEFAULT_TYPE,
     status_message: Message,
     sent: Message,
-    key: str | None,
+    keys: list[str],
     result: DownloadResult,
     language: str,
     user_id: int,
-) -> None:
-    """Record the upload, cache its file_id and clear the status message."""
+) -> SharedUpload:
+    """Record the upload, cache its file_id and clear the status message.
+
+    Returns what a waiting request needs to re-send the same file.
+    """
     svc = services.of(context)
 
     file_id = None
@@ -608,10 +676,13 @@ async def _finish(
     elif sent.document is not None:
         file_id, kind = sent.document.file_id, "document"
 
-    if file_id and key:
-        await svc.storage.cache_store(
-            key, file_id=file_id, kind=kind, title=result.title
-        )
+    if file_id:
+        # Both the URL-shaped key the next request will look up, and the
+        # id-shaped one that matches the same video under another URL.
+        for key in dict.fromkeys(k for k in keys if k):
+            await svc.storage.cache_store(
+                key, file_id=file_id, kind=kind, title=result.title
+            )
 
     await svc.storage.record_download(user_id)
 
@@ -619,6 +690,40 @@ async def _finish(
         await status_message.delete()
     except TelegramError:
         await _edit(status_message, t(language, "processing"))
+
+    if not file_id:
+        return FAILED
+    return SharedUpload(file_id=file_id, kind=kind, title=result.title)
+
+
+def _check_disk(settings: Any) -> None:
+    """Refuse before downloading rather than filling the volume."""
+    floor = settings.min_free_disk_mb * 1024 * 1024
+    if floor <= 0:
+        return
+    try:
+        free = shutil.disk_usage(settings.work_dir).free
+    except OSError as exc:  # the directory vanished under us
+        logger.warning("could not read free space on %s: %s", settings.work_dir, exc)
+        return
+    if free < floor:
+        logger.error(
+            "refusing to download: %s free on %s, below the %s floor",
+            human_size(free), settings.work_dir, human_size(floor),
+        )
+        raise DownloadFailure("err_disk")
+
+
+async def _send_shared(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, shared: SharedUpload
+) -> None:
+    """Re-send a file another request already uploaded, by its file_id."""
+    if shared.kind == "audio":
+        await context.bot.send_audio(chat_id, audio=shared.file_id)
+    else:
+        await context.bot.send_video(
+            chat_id, video=shared.file_id, supports_streaming=True
+        )
 
 
 async def _show_failure(

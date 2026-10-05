@@ -19,6 +19,7 @@ SETTINGS_LANG = "sl"    # sl
 SETTINGS_ASK = "sa"     # sa
 SETTINGS_QUALITY = "sq" # sq
 SET_QUALITY = "su"      # su|<quality>
+JOIN_VERIFY = "jv"      # jv
 
 
 def quality_keyboard(
@@ -52,6 +53,22 @@ def quality_keyboard(
     )
     rows.append(
         [InlineKeyboardButton(t(language, "btn_cancel"), callback_data=f"{DISMISS}|{token}")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def join_keyboard(language: str, channels) -> InlineKeyboardMarkup:
+    """One link per required channel, then the re-check button."""
+    rows = [
+        [InlineKeyboardButton(t(language, "btn_join", title=channel.title),
+                              url=channel.url)]
+        for channel in channels
+        # A private channel configured without an invite link has nothing to
+        # open; listing it as a dead button would only confuse people.
+        if channel.url
+    ]
+    rows.append(
+        [InlineKeyboardButton(t(language, "btn_verify"), callback_data=JOIN_VERIFY)]
     )
     return InlineKeyboardMarkup(rows)
 

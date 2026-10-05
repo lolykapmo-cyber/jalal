@@ -25,6 +25,9 @@
 - **حدود استخدام عادل**: سقف للتحميلات المتوازية، ومهلة بين الطلبات،
   وحد أقصى لمدة الفيديو.
 - **إلغاء فوري** لأي تحميل جارٍ عبر زر أو أمر `/cancel`.
+- **اشتراك إجباري** في قنوات تحدّدها، مع أزرار انضمام وزر تحقّق.
+- **تحميل واحد لعدة طالبين**: الرابط المنتشر الذي يرسله عشرة أشخاص في وقت
+  واحد يُحمَّل مرة واحدة ويُرسل للجميع.
 - **قائمة بيضاء** اختيارية لقصر البوت على مستخدمين محدّدين.
 
 ---
@@ -122,6 +125,9 @@ python -m bot
 | `COOLDOWN_SECONDS` | `3` | المهلة بين طلبين لنفس المستخدم |
 | `MAX_DURATION_SECONDS` | `10800` | أقصى مدة فيديو (٣ ساعات) |
 | `MAX_DOWNLOAD_ATTEMPTS` | `4` | عدد العملاء المختلفين قبل الاستسلام |
+| `REQUIRED_CHANNELS` | فارغ | قنوات الاشتراك الإجباري |
+| `MEMBERSHIP_FAIL_OPEN` | `true` | السماح بالمرور إن تعذّر التحقّق |
+| `MIN_FREE_DISK_MB` | `1024` | أقل مساحة حرة قبل بدء التحميل |
 | `DEFAULT_LANGUAGE` | `ar` | `ar` أو `en` |
 | `DEFAULT_QUALITY` | `best` | `best` / `1080` / `720` / `480` / `360` / `audio` |
 | `ASK_QUALITY` | `true` | `false` = تحميل فوري بالجودة الافتراضية |
@@ -184,6 +190,29 @@ TELEGRAM_API_ROOT=http://telegram-bot-api:8081
 
 ---
 
+## 🔐 الاشتراك الإجباري
+
+لمنع المستخدم من استخدام البوت قبل الاشتراك في قنواتك:
+
+```env
+REQUIRED_CHANNELS=@nextgenshop1,@Nexus_tv_1
+```
+
+تقبل أيضاً روابط `t.me`، وقناة خاصة بصيغة `-100123...|https://t.me/+رابط_الدعوة`،
+وعنواناً مخصّصاً للزر بصيغة `@اسم|العنوان`.
+
+> **شرط لا غنى عنه:** البوت يجب أن يكون **مشرفاً** في كل قناة. تليكرام لا
+> يسمح لبوت غير مشرف بقراءة أعضاء القناة، فلا يستطيع التحقّق أصلاً.
+
+عند الفشل في التحقّق (البوت ليس مشرفاً مثلاً) يسمح البوت بالمرور ويسجّل
+تحذيراً واضحاً، لأن خطأً في الإعداد يجب ألا يُغلق بوتاً سليماً أمام الجميع.
+لعكس ذلك: `MEMBERSHIP_FAIL_OPEN=false`.
+
+ويُتذكّر الاشتراك المُتحقَّق منه ٥ دقائق (`MEMBERSHIP_CACHE_SECONDS`) تقليلاً
+للضغط على تليكرام. أما عدم الاشتراك فلا يُحفظ أبداً، ليعمل زر «تحققت» فوراً.
+
+---
+
 ## 📈 عند الاستخدام الكثيف
 
 ثلاث نقاط تحدّد سلوك البوت تحت الحمل:
@@ -198,8 +227,17 @@ TELEGRAM_API_ROOT=http://telegram-bot-api:8081
    `err_login` بكثرة على يوتيوب تحديداً، فذلك سببه الأرجح — عالجه بـ
    `PROXY` أو بـ `COOLDOWN_SECONDS` أعلى، لا بالكوكيز.
 
-الذاكرة المؤقتة تساعد كثيراً هنا: الرابط الشائع (فيديو منتشر يرسله عشرة
-أشخاص) يُحمّل مرة واحدة ويُرسل للبقية فوراً عبر `file_id`.
+**توحيد التحميلات** هو أهم ما يحمي السيرفر تحت الضغط: حين يرسل عشرة أشخاص
+نفس الرابط في نفس الدقيقة، يُحمَّل مرة واحدة ويُرسل للتسعة الباقين عبر
+`file_id` — عشرة تحميلات تصير واحداً. ويبقى محفوظاً بعدها في الذاكرة المؤقتة.
+
+ويرفض البوت التحميل بأدب إن قلّت المساحة الحرة عن `MIN_FREE_DISK_MB`، بدل
+أن يملأ القرص ويُسقط الخدمة.
+
+**البقاء بعد إعادة التشغيل** مضمون: الخدمة مُفعّلة عبر systemd وتبدأ تلقائياً
+مع الإقلاع (`systemctl is-enabled jalal-bot`)، و`Restart=always` يعيدها بعد أي
+انهيار، و`StartLimitIntervalSec=0` يمنع systemd من الاستسلام بعد عدة محاولات
+متتالية — وهو سلوكه الافتراضي الذي كان سيوقف البوت نهائياً.
 
 ---
 
@@ -210,9 +248,10 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-١٣٢ اختباراً، كلها تعمل بدون إنترنت — بما فيها اختبارات تُثبت أن سلّم
-إعادة المحاولة يتجاوز الحجب ويتوقف فوراً عند المحتوى الخاص. اختبارات
-ffmpeg تُتخطّى تلقائياً إن لم يكن مثبّتاً.
+١٧٨ اختباراً، كلها تعمل بدون إنترنت — بما فيها اختبارات تُثبت أن سلّم إعادة
+المحاولة يتجاوز الحجب، وأن عشرة طلبات متزامنة تُنتج تحميلاً واحداً، وأن فشل
+التحقّق من الاشتراك لا يُغلق البوت أمام الجميع. اختبارات ffmpeg تُتخطّى
+تلقائياً إن لم يكن مثبّتاً.
 
 ---
 
@@ -226,6 +265,8 @@ bot/
 ├── config.py          قراءة الإعدادات من البيئة والتحقّق منها
 ├── downloader.py      غلاف yt-dlp: الصيغ، الإلغاء، تصنيف الأخطاء
 ├── strategies.py      سلالم إعادة المحاولة التي تُغني عن الكوكيز
+├── membership.py      بوابة الاشتراك الإجباري
+├── inflight.py        توحيد التحميلات المتزامنة لنفس الرابط
 ├── media.py           ffmpeg: الفحص، المصغّرات، MP3، التصغير
 ├── storage.py         SQLite: التفضيلات، ذاكرة file_id، العدّادات
 ├── progress.py        رسالة التقدّم التي تُحدّث نفسها
@@ -317,6 +358,9 @@ quality, get the file back in the chat.
 - **Fair-use limits**: concurrency caps, a per-user cooldown and a maximum
   duration.
 - **Instant cancellation** via a button or `/cancel`.
+- **Mandatory channel subscription**, with join buttons and a verify button.
+- **One download for many askers**: a link ten people send at once is
+  fetched once and re-sent to the rest by `file_id`.
 - **Optional allow-list** to keep the bot private.
 
 ## 🚀 Quick start
@@ -410,6 +454,27 @@ real privacy.
 
 ---
 
+## 🔐 Mandatory subscription
+
+```env
+REQUIRED_CHANNELS=@nextgenshop1,@Nexus_tv_1
+```
+
+Also accepts `t.me` links, a private channel as
+`-100123...|https://t.me/+invite`, and a custom button label as `@name|Label`.
+
+> **The bot must be an administrator of every listed channel.** Telegram
+> refuses the membership query otherwise, so the requirement simply cannot
+> be checked.
+
+When the check cannot be answered the bot lets the user through and logs a
+loud warning, because one misconfiguration should not lock everybody out of
+a working bot. Set `MEMBERSHIP_FAIL_OPEN=false` to invert that. A verified
+membership is remembered for `MEMBERSHIP_CACHE_SECONDS`; a failure is never
+cached, so the verify button reacts immediately.
+
+---
+
 ## 📈 Under heavy use
 
 Three things decide how the bot behaves at load:
@@ -424,8 +489,19 @@ Three things decide how the bot behaves at load:
    `err_login` on YouTube specifically is usually this — address it with
    `PROXY` or a higher `COOLDOWN_SECONDS`, not with cookies.
 
-The upload cache helps a lot here: a link ten people send gets downloaded
-once and re-sent to the rest instantly by `file_id`.
+**Download coalescing** is what protects the server at load: when ten people
+send the same link in the same minute, it is fetched once and the other nine
+are sent the finished file by `file_id`. Ten downloads become one, and the
+result stays in the upload cache afterwards.
+
+The bot also refuses politely when free space falls below `MIN_FREE_DISK_MB`
+rather than filling the volume and taking the service down with it.
+
+**Surviving a reboot** is handled: the unit is enabled, so it starts at boot
+(`systemctl is-enabled jalal-bot`), `Restart=always` brings it back after a
+crash, and `StartLimitIntervalSec=0` stops systemd giving up after a few
+rapid restarts, which is its default and would otherwise stop the bot for
+good.
 
 ## 🧪 Tests
 
@@ -433,8 +509,9 @@ once and re-sent to the rest instantly by `file_id`.
 pip install -r requirements-dev.txt && python -m pytest
 ```
 
-132 tests, all offline — including ones that prove the retry ladder gets
-past a block and stops immediately on private content. The ffmpeg-backed
+178 tests, all offline — including ones that prove the retry ladder gets
+past a block, that ten simultaneous requests cause one download, and that a
+subscriber check which cannot be answered does not lock anyone out. The ffmpeg-backed
 tests skip themselves if ffmpeg isn't installed.
 
 ## 🔧 Troubleshooting

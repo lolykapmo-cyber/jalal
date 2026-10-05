@@ -19,7 +19,9 @@ from telegram.ext import (
 
 from . import services
 from .config import Settings
+from .inflight import InFlight
 from .jobs import JobRegistry
+from .membership import MembershipGate, parse_channels
 from .storage import Storage
 from .throttle import Throttle
 from .handlers import commands, download, errors, keyboards
@@ -51,6 +53,12 @@ def build_application(settings: Settings) -> Application:
             cooldown_seconds=settings.cooldown_seconds,
         ),
         jobs=JobRegistry(),
+        gate=MembershipGate(
+            parse_channels(settings.required_channels),
+            cache_seconds=settings.membership_cache_seconds,
+            fail_open=settings.membership_fail_open,
+        ),
+        inflight=InFlight(),
     )
 
     builder = (
@@ -91,6 +99,11 @@ def _register(application: Application) -> None:
         CallbackQueryHandler(download.on_quality_chosen, pattern=r"^q\|")
     )
     application.add_handler(CallbackQueryHandler(download.on_dismiss, pattern=r"^d\|"))
+    application.add_handler(
+        CallbackQueryHandler(
+            download.on_join_verify, pattern=f"^{keyboards.JOIN_VERIFY}$"
+        )
+    )
     application.add_handler(
         CallbackQueryHandler(
             download.on_cancel_button, pattern=f"^{keyboards.CANCEL_JOB}$"
@@ -164,6 +177,17 @@ async def _post_init(application: Application) -> None:
         )
     except Exception:  # noqa: BLE001 - cosmetic
         logger.debug("set_my_commands failed", exc_info=True)
+
+    if container.gate.enabled:
+        logger.info(
+            "subscription required for: %s",
+            ", ".join(channel.chat_id for channel in container.gate.channels),
+        )
+        logger.info(
+            "the bot must be an administrator of each, or the check cannot "
+            "be answered (currently fail-%s)",
+            "open" if settings.membership_fail_open else "closed",
+        )
 
     me = application.bot
     logger.info(
