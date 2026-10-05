@@ -203,10 +203,32 @@ def repair(settings: Settings) -> list[str]:
             steps.append("restart the PO token provider: ok")
 
     if shutil.which("systemctl"):
-        ok, _ = _run(["systemctl", "restart", "jalal-bot"], timeout=120)
+        # --no-block: returning immediately means this process cannot time
+        # out mid-restart and leave the service stopped.
+        ok, _ = _run(["systemctl", "restart", "--no-block", "jalal-bot"], timeout=60)
         steps.append(f"restart the bot: {'ok' if ok else 'failed'}")
 
     return steps
+
+
+def ensure_bot_is_running() -> str | None:
+    """Last line of defence: never exit having left the bot stopped.
+
+    Restart=always covers a crash, but not a restart job that was cancelled
+    or a stop issued by something else. Nothing else would notice.
+    """
+    if not shutil.which("systemctl"):
+        return None
+    active, _ = _run(["systemctl", "is-active", "--quiet", "jalal-bot"], timeout=30)
+    if active:
+        return None
+    logger.error("the bot is not running; starting it")
+    started, output = _run(["systemctl", "start", "--no-block", "jalal-bot"], timeout=60)
+    return (
+        "the bot was stopped and has been started again"
+        if started
+        else f"the bot is stopped and would not start: {output}"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -331,9 +353,28 @@ async def main_async(argv: list[str] | None = None) -> int:
 
 def main() -> int:
     try:
-        return asyncio.run(main_async())
+        code = asyncio.run(main_async())
     except KeyboardInterrupt:
         return 130
+
+    # Whatever the checks said, the bot must be left running.
+    try:
+        note = ensure_bot_is_running()
+        if note:
+            logger.warning("%s", note)
+            asyncio.run(_alert_only(note))
+            return 1
+    except Exception:  # noqa: BLE001 - never fail on the safety net itself
+        logger.debug("could not confirm the bot is running", exc_info=True)
+    return code
+
+
+async def _alert_only(text: str) -> None:
+    try:
+        settings = load_settings()
+    except ConfigError:
+        return
+    await notify_admins(settings, f"⚠️ {text}")
 
 
 if __name__ == "__main__":

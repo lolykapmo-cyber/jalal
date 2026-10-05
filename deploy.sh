@@ -19,7 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.11"
+SCRIPT_REVISION="2026-10-05.12"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -404,7 +404,10 @@ say "Scheduling the hourly self-test"
 cat > "/etc/systemd/system/$SERVICE_NAME-selftest.service" <<UNIT
 [Unit]
 Description=Check that downloading still works, and repair it if not
-After=network-online.target $SERVICE_NAME.service
+# Deliberately NOT ordered after the bot. Its repair step restarts the bot,
+# and asking systemd to restart a unit you are ordered against can stall
+# that job, which risks leaving the bot stopped with nothing to start it.
+After=network-online.target
 Wants=network-online.target
 
 [Service]

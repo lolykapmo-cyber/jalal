@@ -373,3 +373,33 @@ async def test_the_checks_own_scratch_directory_is_not_a_false_positive(
     assert seen, "the check never ran"
     for mode in seen:
         assert mode & 0o055 == 0o055, f"scratch dir was {mode:o}, not traversable"
+
+
+def test_the_safety_net_is_inert_without_systemctl(monkeypatch):
+    """It must not pretend to manage a service that is not managed here."""
+    monkeypatch.setattr(selftest.shutil, "which", lambda name: None)
+    assert selftest.ensure_bot_is_running() is None
+
+
+def test_the_safety_net_reports_when_it_had_to_start_the_bot(monkeypatch):
+    calls = []
+
+    def fake_run(command, timeout=600.0):
+        calls.append(command)
+        if "is-active" in command:
+            return False, ""      # the bot is down
+        return True, ""           # and starts cleanly
+
+    monkeypatch.setattr(selftest.shutil, "which", lambda name: "/bin/systemctl")
+    monkeypatch.setattr(selftest, "_run", fake_run)
+
+    note = selftest.ensure_bot_is_running()
+    assert note and "started again" in note
+    # The restart must not block, or this process can time out mid-restart.
+    assert any("--no-block" in c for c in calls)
+
+
+def test_the_safety_net_says_nothing_when_the_bot_is_up(monkeypatch):
+    monkeypatch.setattr(selftest.shutil, "which", lambda name: "/bin/systemctl")
+    monkeypatch.setattr(selftest, "_run", lambda command, timeout=600.0: (True, ""))
+    assert selftest.ensure_bot_is_running() is None
