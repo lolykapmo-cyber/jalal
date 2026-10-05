@@ -19,7 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.7"
+SCRIPT_REVISION="2026-10-05.8"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -33,6 +33,12 @@ REQUIRED_CHANNELS="${REQUIRED_CHANNELS:-@nextgenshop1,@Nexus_tv_1}"
 # Re-encoding is CPU-bound, so the worker count tracks the core count.
 # More workers than cores makes everyone slower, not faster.
 WORKERS="${WORKERS:-$(nproc 2>/dev/null || echo 2)}"
+
+# yt-dlp's stable releases can trail its master branch by over a month, and
+# a site-breaking change is usually fixed there within days. Tracking the
+# pre-release builds is the difference between the bot recovering by itself
+# and sitting broken until the next stable. Set YTDLP_PRE="" for stable.
+YTDLP_PRE="${YTDLP_PRE:---pre}"
 
 ENV_FILE="$INSTALL_DIR/.env"
 VENV_DIR="$INSTALL_DIR/.venv"
@@ -363,7 +369,11 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=$VENV_DIR/bin/pip install --quiet --upgrade yt-dlp curl_cffi
+# --pre matters: without it this is a no-op whenever the newest stable is
+# already installed, which is exactly when a site has broken and master
+# already carries the fix.
+ExecStart=$VENV_DIR/bin/pip install --quiet --upgrade $YTDLP_PRE yt-dlp
+ExecStart=$VENV_DIR/bin/pip install --quiet --upgrade curl_cffi
 ExecStartPost=/bin/systemctl try-restart $SERVICE_NAME.service
 UNIT
 

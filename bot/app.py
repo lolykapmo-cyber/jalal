@@ -217,6 +217,12 @@ async def _post_init(application: Application) -> None:
             "open" if settings.membership_fail_open else "closed",
         )
 
+    try:
+        from yt_dlp.version import __version__ as ytdlp_version
+        logger.info("yt-dlp %s", ytdlp_version)
+    except Exception:  # noqa: BLE001 - cosmetic
+        pass
+
     me = application.bot
     logger.info(
         "ready as @%s | upload limit %s MB | workers %s | allow-list %s",
