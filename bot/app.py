@@ -1,0 +1,172 @@
+"""Build the Telegram application and register every handler."""
+
+from __future__ import annotations
+
+import logging
+
+from telegram import Update
+from telegram.ext import (
+    AIORateLimiter,
+    Application,
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
+
+from . import services
+from .config import Settings
+from .jobs import JobRegistry
+from .storage import Storage
+from .throttle import Throttle
+from .handlers import commands, download, errors, keyboards
+
+logger = logging.getLogger(__name__)
+
+# Uploads are the slow part, so they get a much longer write budget than
+# ordinary API calls.
+API_READ_TIMEOUT = 60.0
+API_WRITE_TIMEOUT = 120.0
+API_CONNECT_TIMEOUT = 30.0
+MEDIA_WRITE_TIMEOUT = 1800.0
+
+
+def build_application(settings: Settings) -> Application:
+    """Wire storage, limits and handlers into a ready-to-run Application."""
+    storage = Storage(
+        settings.database_path,
+        default_language=settings.default_language,
+        default_quality=settings.default_quality,
+        default_ask_quality=settings.ask_quality,
+    )
+    container = services.Services(
+        settings=settings,
+        storage=storage,
+        throttle=Throttle(
+            max_global=settings.max_concurrent_downloads,
+            max_per_user=settings.max_user_downloads,
+            cooldown_seconds=settings.cooldown_seconds,
+        ),
+        jobs=JobRegistry(),
+    )
+
+    builder = (
+        ApplicationBuilder()
+        .token(settings.token)
+        .base_url(settings.api_base_url)
+        .base_file_url(settings.api_file_base_url)
+        # Without this, a long download would block /cancel.
+        .concurrent_updates(True)
+        .read_timeout(API_READ_TIMEOUT)
+        .write_timeout(API_WRITE_TIMEOUT)
+        .connect_timeout(API_CONNECT_TIMEOUT)
+        .media_write_timeout(MEDIA_WRITE_TIMEOUT)
+        .rate_limiter(AIORateLimiter())
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+    )
+    if settings.local_mode:
+        builder = builder.local_mode(True)
+
+    application = builder.build()
+    services.attach(application, container)
+    _register(application)
+    return application
+
+
+def _register(application: Application) -> None:
+    """Order matters: commands and callbacks before the catch-all link handler."""
+    application.add_handler(CommandHandler("start", commands.start))
+    application.add_handler(CommandHandler(["help", "h"], commands.help_command))
+    application.add_handler(CommandHandler("settings", commands.settings_command))
+    application.add_handler(CommandHandler("lang", commands.lang_command))
+    application.add_handler(CommandHandler("quality", commands.quality_command))
+    application.add_handler(CommandHandler("stats", commands.stats_command))
+    application.add_handler(CommandHandler("cancel", download.cancel_command))
+
+    application.add_handler(
+        CallbackQueryHandler(download.on_quality_chosen, pattern=r"^q\|")
+    )
+    application.add_handler(CallbackQueryHandler(download.on_dismiss, pattern=r"^d\|"))
+    application.add_handler(
+        CallbackQueryHandler(
+            download.on_cancel_button, pattern=f"^{keyboards.CANCEL_JOB}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            commands.on_settings_language, pattern=f"^{keyboards.SETTINGS_LANG}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            commands.on_settings_ask, pattern=f"^{keyboards.SETTINGS_ASK}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            commands.on_settings_quality, pattern=f"^{keyboards.SETTINGS_QUALITY}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(commands.on_set_quality, pattern=r"^su\|")
+    )
+
+    application.add_handler(MessageHandler(filters.Document.ALL, commands.on_document))
+
+    # Anything else with text: look for links in it.
+    application.add_handler(
+        MessageHandler(
+            (filters.TEXT | filters.CAPTION) & ~filters.COMMAND, download.handle_link
+        )
+    )
+
+    application.add_error_handler(errors.on_error)
+
+
+async def _post_init(application: Application) -> None:
+    container = application.bot_data[services.BOT_DATA_KEY]
+    settings: Settings = container.settings
+
+    settings.work_dir.mkdir(parents=True, exist_ok=True)
+    await container.storage.open()
+
+    pruned = await container.storage.cache_prune(ttl_hours=settings.cache_ttl_hours)
+    if pruned:
+        logger.info("pruned %s expired cache entries", pruned)
+
+    try:
+        await application.bot.set_my_commands(
+            commands.command_list(settings.default_language)
+        )
+    except Exception:  # noqa: BLE001 - cosmetic
+        logger.debug("set_my_commands failed", exc_info=True)
+
+    me = application.bot
+    logger.info(
+        "ready as @%s | upload limit %s MB | workers %s | allow-list %s",
+        me.username,
+        settings.upload_limit_mb,
+        settings.max_concurrent_downloads,
+        len(settings.allowed_users) or "open",
+    )
+
+
+async def _post_shutdown(application: Application) -> None:
+    container = application.bot_data.get(services.BOT_DATA_KEY)
+    if container is None:
+        return
+    stopped = container.jobs.cancel_all()
+    if stopped:
+        logger.info("cancelled %s in-flight download(s)", stopped)
+    await container.storage.close()
+
+
+def run(settings: Settings) -> None:
+    """Start long polling and block until the process is interrupted."""
+    application = build_application(settings)
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+    )
