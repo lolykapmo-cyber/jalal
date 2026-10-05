@@ -27,12 +27,12 @@ def base_env(monkeypatch, tmp_path):
 # ---- which links to check -------------------------------------------
 
 
-def test_the_default_canary_is_yt_dlps_own_test_video():
-    """A video the extractor project itself tests against outlives whatever
-    clip is popular this month."""
-    urls = canary_urls(load_settings())
-    assert urls == selftest.DEFAULT_TEST_URLS
-    assert len(urls) == 1
+def test_nothing_is_checked_before_anything_has_downloaded(tmp_path, monkeypatch):
+    """Falling back to a hardcoded video meant reporting on a link nobody
+    could verify was still alive, which produced a false alarm on every
+    fresh install. Nothing proven means nothing to check."""
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "absent.sqlite3"))
+    assert canary_urls(load_settings()) == ()
 
 
 def test_urls_can_be_overridden(monkeypatch):
@@ -42,9 +42,10 @@ def test_urls_can_be_overridden(monkeypatch):
     )
 
 
-def test_an_empty_override_falls_back_to_the_default(monkeypatch):
+def test_a_blank_override_is_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "absent.sqlite3"))
     monkeypatch.setenv("SELFTEST_URLS", "   ")
-    assert canary_urls(load_settings()) == selftest.DEFAULT_TEST_URLS
+    assert canary_urls(load_settings()) == ()
 
 
 # ---- the permission class of bug ------------------------------------
@@ -276,9 +277,52 @@ async def test_only_the_newest_link_per_site_is_watched(tmp_path, monkeypatch):
     assert urls == ("https://youtu.be/newer",)
 
 
-def test_a_fresh_install_falls_back_to_the_built_in_canary(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "nothing-yet.sqlite3"))
-    assert canary_urls(load_settings()) == selftest.DEFAULT_TEST_URLS
+async def test_an_existing_install_recovers_canaries_from_its_upload_cache(
+    tmp_path, monkeypatch
+):
+    """The successes table is new, but the upload cache has been keyed by
+    URL all along, so an existing install has canaries at once rather than
+    after its next download."""
+    from bot.storage import Storage
+
+    db = tmp_path / "b.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db))
+
+    store = Storage(db, default_language="ar", default_quality="best",
+                    default_ask_quality=True)
+    await store.open()
+    await store.cache_store("url:https://youtu.be/cached:720",
+                            file_id="F", kind="video", title="t")
+    await store.cache_store("url:https://vt.tiktok.com/cached:best",
+                            file_id="F", kind="video", title="t")
+    # An id-shaped key carries no URL and must be ignored.
+    await store.cache_store("youtube:abc:720", file_id="F", kind="video", title="t")
+    await store.close()
+
+    urls = canary_urls(load_settings())
+    assert set(urls) == {"https://youtu.be/cached", "https://vt.tiktok.com/cached"}
+
+
+def test_recorded_successes_win_over_the_cache(tmp_path, monkeypatch):
+    """The cache is only a fallback for installs that predate the table."""
+    import asyncio
+
+    from bot.storage import Storage
+
+    db = tmp_path / "b.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db))
+
+    async def seed():
+        store = Storage(db, default_language="ar", default_quality="best",
+                        default_ask_quality=True)
+        await store.open()
+        await store.cache_store("url:https://old.site/cached:720",
+                                file_id="F", kind="video", title="t")
+        await store.record_success("https://youtu.be/recorded", "youtube")
+        await store.close()
+
+    asyncio.run(seed())
+    assert canary_urls(load_settings()) == ("https://youtu.be/recorded",)
 
 
 def test_an_explicit_setting_still_wins(tmp_path, monkeypatch):

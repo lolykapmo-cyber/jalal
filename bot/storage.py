@@ -100,7 +100,60 @@ def read_recent_successes(path: Path, limit: int = 3) -> list[str]:
         return []
     finally:
         conn.close()
-    return [row[0] for row in rows]
+    urls = [row[0] for row in rows]
+    if urls:
+        return urls
+
+    # Nothing recorded yet, but the upload cache has been keyed by URL since
+    # long before this table existed. Reading it back means an existing
+    # install has canaries immediately instead of after its next download.
+    return _urls_from_cache(conn_path=path, limit=limit)
+
+
+_QUALITY_SUFFIXES = ("best", "1080", "720", "480", "360", "audio")
+
+
+def _urls_from_cache(*, conn_path: Path, limit: int) -> list[str]:
+    try:
+        conn = sqlite3.connect(f"file:{conn_path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT cache_key FROM media_cache WHERE cache_key LIKE 'url:%'"
+            " ORDER BY created_at DESC LIMIT 200"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    seen_hosts: set[str] = set()
+    urls: list[str] = []
+    for (key,) in rows:
+        url = _url_from_cache_key(key)
+        if url is None:
+            continue
+        # One per host, so a failure also says which site broke.
+        host = url.split("/")[2] if "//" in url else url
+        if host in seen_hosts:
+            continue
+        seen_hosts.add(host)
+        urls.append(url)
+        if len(urls) >= limit:
+            break
+    return urls
+
+
+def _url_from_cache_key(key: str) -> str | None:
+    """Recover the URL from a 'url:<url>:<quality>' cache key."""
+    if not key.startswith("url:"):
+        return None
+    body = key[4:]
+    head, _, tail = body.rpartition(":")
+    if not head or tail not in _QUALITY_SUFFIXES:
+        return None
+    return head if head.startswith(("http://", "https://")) else None
 
 
 class Storage:

@@ -26,11 +26,6 @@ from .downloader import DownloadFailure, run_download
 
 logger = logging.getLogger("bot.selftest")
 
-# yt-dlp's own test video. It has been up since 2012 and is what the project
-# tests itself against, which makes it a far safer canary than whatever clip
-# happens to be popular today.
-DEFAULT_TEST_URLS = ("https://www.youtube.com/watch?v=BaW_jenozKc",)
-
 # A canary only has to prove the pipeline works, not that it is fast.
 CHECK_QUALITY = "360"
 
@@ -84,9 +79,12 @@ def canary_urls(settings: Settings) -> tuple[str, ...]:
         logger.info("checking %s link(s) this bot downloaded before", len(proven))
         return tuple(proven)
 
-    # A fresh install has no history yet.
-    logger.info("no download history yet; using the built-in canary")
-    return DEFAULT_TEST_URLS
+    # Nothing has been downloaded yet. Checking a hardcoded video instead
+    # would mean reporting on a link nobody here can verify is still alive,
+    # and a canary that is merely old produces a false alarm on every fresh
+    # install. There is genuinely nothing to verify, so say so.
+    logger.info("nothing downloaded yet; nothing to check")
+    return ()
 
 
 async def check_one(url: str, settings: Settings, work_root: Path) -> CheckResult:
@@ -272,6 +270,13 @@ async def main_async(argv: list[str] | None = None) -> int:
         return 2
 
     results = await run_checks(settings)
+    if not results:
+        logger.info(
+            "no proven links yet: download something and this starts "
+            "watching it automatically"
+        )
+        return 0
+
     for result in results:
         (logger.info if result.ok else logger.error)("%s", result.summary)
 

@@ -154,6 +154,16 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await notice.edit_text(f"⚠️ {type(exc).__name__}: {exc}")
             return
 
+        if not results:
+            await notice.edit_text(
+                "ℹ️ لم يُحمَّل شيء بعد.\n"
+                "حمّل مقطعاً وسيبدأ الفحص بمراقبته تلقائياً."
+                if prefs.language == "ar" else
+                "ℹ️ Nothing has been downloaded yet.\n"
+                "Download something and the check starts watching it."
+            )
+            return
+
         head = "✅" if all(r.ok for r in results) else "⚠️"
         body = "\n\n".join(r.summary for r in results)
         await notice.edit_text(f"{head}\n\n{body}"[:4000],
