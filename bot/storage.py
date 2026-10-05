@@ -36,6 +36,18 @@ CREATE TABLE IF NOT EXISTS media_cache (
 CREATE INDEX IF NOT EXISTS media_cache_created_at
     ON media_cache (created_at);
 
+-- Links that really downloaded. The self-test uses the most recent of
+-- these as its canaries, so it watches what this bot actually does rather
+-- than a hardcoded video that may be deleted by the time it matters.
+CREATE TABLE IF NOT EXISTS successes (
+    url        TEXT PRIMARY KEY,
+    extractor  TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS successes_created_at
+    ON successes (created_at);
+
 CREATE TABLE IF NOT EXISTS counters (
     name  TEXT    PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
@@ -61,6 +73,34 @@ class CachedMedia:
     file_id: str
     kind: str
     title: str | None
+
+
+def read_recent_successes(path: Path, limit: int = 3) -> list[str]:
+    """The newest proven link per site, read-only and from any process.
+
+    Opened read-only so the running bot is never blocked, and failing to
+    open is not an error: a fresh install simply has no history yet.
+    """
+    if limit <= 0 or not path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT url FROM successes s1"
+            " WHERE created_at = ("
+            "   SELECT MAX(created_at) FROM successes s2"
+            "   WHERE s2.extractor = s1.extractor)"
+            " ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [row[0] for row in rows]
 
 
 class Storage:
@@ -265,6 +305,27 @@ class Storage:
             )
             self._db.commit()
             return cursor.rowcount or 0
+
+    # ---- proven links -------------------------------------------------
+
+    async def record_success(self, url: str, extractor: str) -> None:
+        await asyncio.to_thread(self._record_success_sync, url, extractor)
+
+    def _record_success_sync(self, url: str, extractor: str) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO successes (url, extractor, created_at)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(url) DO UPDATE SET created_at = excluded.created_at",
+                (url, extractor.lower(), time.time()),
+            )
+            # A handful per site is plenty; the rest is history nobody reads.
+            self._db.execute(
+                "DELETE FROM successes WHERE url NOT IN ("
+                "  SELECT url FROM successes ORDER BY created_at DESC LIMIT 50"
+                ")"
+            )
+            self._db.commit()
 
     # ---- counters -----------------------------------------------------
 

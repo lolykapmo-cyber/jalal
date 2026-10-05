@@ -799,6 +799,13 @@ async def _finish(
 
     await svc.storage.record_download(user_id)
 
+    # Remember the link so the self-test can watch something this bot has
+    # actually proven, instead of a hardcoded video that may be deleted.
+    try:
+        await svc.storage.record_success(result.webpage_url, result.extractor)
+    except Exception:  # noqa: BLE001 - bookkeeping must never fail an upload
+        logger.debug("could not record the proven link", exc_info=True)
+
     try:
         await status_message.delete()
     except TelegramError:

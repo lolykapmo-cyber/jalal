@@ -67,10 +67,26 @@ class CheckResult:
 
 
 def canary_urls(settings: Settings) -> tuple[str, ...]:
+    """What to check, preferring links this bot has already downloaded.
+
+    Asking an operator to configure this was the wrong design: a hardcoded
+    video gets deleted, and nobody notices until the check cries wolf. The
+    bot already knows which links worked, so it watches those.
+    """
     raw = os.getenv("SELFTEST_URLS", "").strip()
-    if not raw:
-        return DEFAULT_TEST_URLS
-    return tuple(u.strip() for u in raw.replace(";", ",").split(",") if u.strip())
+    if raw:
+        return tuple(u.strip() for u in raw.replace(";", ",").split(",") if u.strip())
+
+    from .storage import read_recent_successes
+
+    proven = read_recent_successes(settings.database_path, limit=3)
+    if proven:
+        logger.info("checking %s link(s) this bot downloaded before", len(proven))
+        return tuple(proven)
+
+    # A fresh install has no history yet.
+    logger.info("no download history yet; using the built-in canary")
+    return DEFAULT_TEST_URLS
 
 
 async def check_one(url: str, settings: Settings, work_root: Path) -> CheckResult:

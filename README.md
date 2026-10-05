@@ -286,14 +286,15 @@ journalctl -u jalal-bot-selftest -n 50    # نتيجة آخر فحص
 systemctl list-timers | grep jalal        # مواعيد المؤقّتات
 ```
 
-ولتغيير روابط الاختبار، في `.env`:
+**ولا يحتاج منك أي إعداد.** يختار الفحص روابطه بنفسه: آخر رابط نجح فعلاً
+من كل منصّة يستخدمها مستخدموك. فهو يراقب ما يفعله بوتك حقاً، لا فيديو
+ثابتاً قد يُحذف فيُطلق إنذاراً كاذباً.
+
+وإن أردت تثبيت روابط بعينها، في `.env`:
 
 ```env
 SELFTEST_URLS=https://youtu.be/...,https://vt.tiktok.com/...
 ```
-
-> الافتراضي هو فيديو الاختبار الخاص بمشروع `yt-dlp` نفسه — موجود منذ ٢٠١٢
-> ويختبر المشروع نفسه عليه، فهو أثبت من أي مقطع رائج اليوم.
 
 ---
 
@@ -616,9 +617,11 @@ systemctl start jalal-bot-selftest
 journalctl -u jalal-bot-selftest -n 50
 ```
 
-Set `SELFTEST_URLS` in `.env` to check your own links. The default is
-yt-dlp's own test video, up since 2012 and what the project tests itself
-against, which outlives whatever clip is popular this month.
+**It needs no configuration.** The check picks its own canaries: the most
+recent link that really downloaded from each site your users use. It
+watches what the bot actually does rather than a fixed video that can be
+deleted and then cry wolf. `SELFTEST_URLS` in `.env` pins specific links
+if you would rather.
 
 ---
 

@@ -235,3 +235,69 @@ def test_a_dead_canary_summary_is_labelled_distinctly():
     broken = CheckResult("https://a.co/1", False, "err_no_formats",
                          failure_key="err_no_formats")
     assert broken.summary.startswith("FAILED")
+
+
+# ---- canaries chosen from real history -------------------------------
+
+
+async def test_links_that_really_downloaded_become_the_canaries(tmp_path, monkeypatch):
+    """Asking an operator to configure this was the wrong design: the bot
+    already knows which links worked."""
+    from bot.storage import Storage
+
+    db = tmp_path / "b.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db))
+
+    store = Storage(db, default_language="ar", default_quality="best",
+                    default_ask_quality=True)
+    await store.open()
+    await store.record_success("https://youtu.be/proven", "youtube")
+    await store.record_success("https://vt.tiktok.com/proven", "tiktok")
+    await store.close()
+
+    urls = canary_urls(load_settings())
+    assert set(urls) == {"https://youtu.be/proven", "https://vt.tiktok.com/proven"}
+
+
+async def test_only_the_newest_link_per_site_is_watched(tmp_path, monkeypatch):
+    from bot.storage import Storage
+
+    db = tmp_path / "b.sqlite3"
+    monkeypatch.setenv("DATABASE_PATH", str(db))
+
+    store = Storage(db, default_language="ar", default_quality="best",
+                    default_ask_quality=True)
+    await store.open()
+    for url in ("https://youtu.be/old", "https://youtu.be/newer"):
+        await store.record_success(url, "youtube")
+    await store.close()
+
+    urls = canary_urls(load_settings())
+    assert urls == ("https://youtu.be/newer",)
+
+
+def test_a_fresh_install_falls_back_to_the_built_in_canary(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "nothing-yet.sqlite3"))
+    assert canary_urls(load_settings()) == selftest.DEFAULT_TEST_URLS
+
+
+def test_an_explicit_setting_still_wins(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "b.sqlite3"))
+    monkeypatch.setenv("SELFTEST_URLS", "https://my.site/x")
+    assert canary_urls(load_settings()) == ("https://my.site/x",)
+
+
+async def test_history_is_capped_so_the_table_cannot_grow_forever(tmp_path):
+    from bot.storage import Storage, read_recent_successes
+
+    db = tmp_path / "b.sqlite3"
+    store = Storage(db, default_language="ar", default_quality="best",
+                    default_ask_quality=True)
+    await store.open()
+    for i in range(80):
+        await store.record_success(f"https://a.co/{i}", f"site{i % 4}")
+    rows = store._conn.execute("SELECT COUNT(*) FROM successes").fetchone()[0]
+    await store.close()
+
+    assert rows <= 50
+    assert len(read_recent_successes(db, limit=10)) <= 4  # one per site
