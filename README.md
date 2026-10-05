@@ -25,7 +25,9 @@
 - **حدود استخدام عادل**: سقف للتحميلات المتوازية، ومهلة بين الطلبات،
   وحد أقصى لمدة الفيديو.
 - **إلغاء فوري** لأي تحميل جارٍ عبر زر أو أمر `/cancel`.
-- **اشتراك إجباري** في قنوات تحدّدها، مع أزرار انضمام وزر تحقّق.
+- **اشتراك إجباري** في قنوات تحدّدها، مع أزرار انضمام وزر تحقّق —
+  **ومن يغادر القناة يُمنع فوراً**، لا بعد انتهاء مهلة.
+- **ملفات حتى ٢ غيغابايت** عبر سكربت واحد يُعدّ سيرفر Bot API محلياً.
 - **تحميل واحد لعدة طالبين**: الرابط المنتشر الذي يرسله عشرة أشخاص في وقت
   واحد يُحمَّل مرة واحدة ويُرسل للجميع.
 - **قائمة بيضاء** اختيارية لقصر البوت على مستخدمين محدّدين.
@@ -146,15 +148,28 @@ python -m bot
 3. إن كان الفيديو طويلاً لدرجة أن إعادة الترميز ستُفسد الجودة، يخبرك
    البوت ويقترح جودة أقل أو استخراج الصوت.
 
-**لرفع ملفات تصل إلى ٢ غيغابايت**، شغّل سيرفر Bot API محلي: أزل التعليق
-عن قسم `telegram-bot-api` في `docker-compose.yml`، واحصل على `api_id`
-و`api_hash` من [my.telegram.org](https://my.telegram.org)، ثم ضع في `.env`:
+### لرفع ملفات أكبر — حتى ٢ غيغابايت
 
-```env
-TELEGRAM_API_ROOT=http://telegram-bot-api:8081
+احصل أولاً على `api_id` و`api_hash` من
+[my.telegram.org](https://my.telegram.org) ← API development tools. (هذان
+يُعرّفان السيرفر، ولا علاقة لهما بتوكن بوتك.)
+
+ثم أمر واحد:
+
+```bash
+sudo bash /opt/jalal/setup-local-api.sh
 ```
 
-سيرتفع حد الرفع إلى ٢٠٠٠ ميغابايت تلقائياً.
+يثبّت Docker، ويشغّل سيرفر Bot API مربوطاً بـ localhost فقط، ويُحوّل البوت
+إليه. يرتفع الحد إلى ٢٠٠٠ ميغابايت تلقائياً، **وتختفي الحاجة لإعادة الترميز
+أصلاً** — وهو أكبر توفير ممكن للمعالج تحت الضغط.
+
+> **خطوة باتجاه واحد:** يشترط تليكرام أن يخرج البوت من الـAPI العام قبل أن
+> يقبله سيرفر خاص. السكربت يسألك قبل تنفيذها، والعودة ممكنة بنفس الطريقة
+> (الأمر مكتوب في مخرجات السكربت). وقد ينقطع البوت حتى ١٠ دقائق أثناء التحويل.
+
+ولا يمرّ الملف الكبير في ذاكرة البوت إطلاقاً: يُسلَّم المسار للسيرفر فيقرأه
+من القرص بنفسه. قراءة ملف ٢ غيغا في الذاكرة كانت ستُسقط سيرفراً صغيراً.
 
 ---
 
@@ -208,8 +223,15 @@ REQUIRED_CHANNELS=@nextgenshop1,@Nexus_tv_1
 تحذيراً واضحاً، لأن خطأً في الإعداد يجب ألا يُغلق بوتاً سليماً أمام الجميع.
 لعكس ذلك: `MEMBERSHIP_FAIL_OPEN=false`.
 
-ويُتذكّر الاشتراك المُتحقَّق منه ٥ دقائق (`MEMBERSHIP_CACHE_SECONDS`) تقليلاً
-للضغط على تليكرام. أما عدم الاشتراك فلا يُحفظ أبداً، ليعمل زر «تحققت» فوراً.
+### المغادرة تُمنع فوراً
+
+لأن البوت مشرف في القنوات، يرسل له تليكرام إشعاراً لحظياً عند **أي** تغيّر في
+العضوية. فحين يغادر أحدهم، يُلغى تصريحه في نفس اللحظة ويُمنع عند أول رسالة
+تالية — لا ينتظر انتهاء مهلة.
+
+والذاكرة المؤقتة (`MEMBERSHIP_CACHE_SECONDS`، دقيقتان) ليست إلا شبكة أمان لو
+ضاع إشعار أثناء إعادة تشغيل. وعدم الاشتراك لا يُحفظ أبداً، ليعمل زر «تحققت»
+لحظياً.
 
 ---
 
@@ -248,10 +270,10 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-١٧٨ اختباراً، كلها تعمل بدون إنترنت — بما فيها اختبارات تُثبت أن سلّم إعادة
-المحاولة يتجاوز الحجب، وأن عشرة طلبات متزامنة تُنتج تحميلاً واحداً، وأن فشل
-التحقّق من الاشتراك لا يُغلق البوت أمام الجميع. اختبارات ffmpeg تُتخطّى
-تلقائياً إن لم يكن مثبّتاً.
+١٩٢ اختباراً، كلها تعمل بدون إنترنت — بما فيها اختبارات تُثبت أن سلّم إعادة
+المحاولة يتجاوز الحجب، وأن عشرة طلبات متزامنة تُنتج تحميلاً واحداً، وأن من
+يغادر القناة يُمنع فعلاً، وأن الملف الكبير يُسلَّم كمسار لا يُقرأ في الذاكرة.
+اختبارات ffmpeg تُتخطّى تلقائياً إن لم يكن مثبّتاً.
 
 ---
 
@@ -267,6 +289,7 @@ bot/
 ├── strategies.py      سلالم إعادة المحاولة التي تُغني عن الكوكيز
 ├── membership.py      بوابة الاشتراك الإجباري
 ├── inflight.py        توحيد التحميلات المتزامنة لنفس الرابط
+setup-local-api.sh     رفع الحد إلى ٢ غيغابايت بأمر واحد
 ├── media.py           ffmpeg: الفحص، المصغّرات، MP3، التصغير
 ├── storage.py         SQLite: التفضيلات، ذاكرة file_id، العدّادات
 ├── progress.py        رسالة التقدّم التي تُحدّث نفسها
@@ -358,7 +381,9 @@ quality, get the file back in the chat.
 - **Fair-use limits**: concurrency caps, a per-user cooldown and a maximum
   duration.
 - **Instant cancellation** via a button or `/cancel`.
-- **Mandatory channel subscription**, with join buttons and a verify button.
+- **Mandatory channel subscription**, with join buttons and a verify button
+  — and **leaving a channel blocks you immediately**, not when a cache expires.
+- **Files up to 2 GB** through a one-command local Bot API server setup.
 - **One download for many askers**: a link ten people send at once is
   fetched once and re-sent to the rest by `file_id`.
 - **Optional allow-list** to keep the bot private.
@@ -470,8 +495,14 @@ Also accepts `t.me` links, a private channel as
 When the check cannot be answered the bot lets the user through and logs a
 loud warning, because one misconfiguration should not lock everybody out of
 a working bot. Set `MEMBERSHIP_FAIL_OPEN=false` to invert that. A verified
-membership is remembered for `MEMBERSHIP_CACHE_SECONDS`; a failure is never
-cached, so the verify button reacts immediately.
+### Leaving revokes access at once
+
+Because the bot administrates the channels, Telegram pushes it every
+membership change. Someone who leaves loses their pass in that moment and is
+blocked on their very next message, rather than waiting for a cache to
+expire. `MEMBERSHIP_CACHE_SECONDS` (two minutes) is only a backstop for an
+update missed across a restart, and a failure is never cached, so the verify
+button reacts instantly.
 
 ---
 
@@ -509,9 +540,10 @@ good.
 pip install -r requirements-dev.txt && python -m pytest
 ```
 
-178 tests, all offline — including ones that prove the retry ladder gets
-past a block, that ten simultaneous requests cause one download, and that a
-subscriber check which cannot be answered does not lock anyone out. The ffmpeg-backed
+192 tests, all offline — including ones that prove the retry ladder gets
+past a block, that ten simultaneous requests cause one download, that a
+departed channel member is blocked again, and that a large upload is handed
+over as a path rather than read into memory. The ffmpeg-backed
 tests skip themselves if ffmpeg isn't installed.
 
 ## 🔧 Troubleshooting

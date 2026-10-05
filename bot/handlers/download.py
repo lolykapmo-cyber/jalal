@@ -229,6 +229,37 @@ async def on_join_verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _edit(query.message, t(prefs.language, "join_verified"))
 
 
+async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A membership change in a gated channel revokes the cached pass.
+
+    Telegram sends this to administrators of the channel, so leaving takes
+    effect on the user's very next message rather than when a cache expires.
+    Both directions drop the entry: joining one channel says nothing about
+    the others, so the next check is made against Telegram either way.
+    """
+    event = update.chat_member
+    if event is None:
+        return
+
+    svc = services.of(context)
+    if not svc.gate.enabled:
+        return
+
+    chat = event.chat
+    if not svc.gate.tracks(chat.id, getattr(chat, "username", None)):
+        return
+
+    member = event.new_chat_member
+    if member is None or member.user is None:
+        return
+
+    svc.gate.forget(member.user.id)
+    logger.info(
+        "membership changed in %s for %s: %s -> re-checking on next use",
+        chat.username or chat.id, member.user.id, member.status,
+    )
+
+
 async def on_dismiss(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """The user closed a quality prompt."""
     query = update.callback_query
@@ -414,7 +445,8 @@ async def _run_job(
                 await reporter.stop()
 
                 sent = await _upload(
-                    context, chat_id, url, result, payload, language
+                    context, chat_id, url, result, payload, language,
+                    svc.settings.local_mode,
                 )
 
         shared_result = await _finish(
@@ -595,6 +627,25 @@ def _caption(language: str, url: str, result: DownloadResult) -> str:
     )[:CAPTION_LIMIT]
 
 
+def _rename_for_telegram(path: Path, title: str, is_audio: bool) -> Path:
+    """Give the file the name the recipient should see.
+
+    In local mode the Bot API server reads the file off disk and takes the
+    filename from the path, so the name has to be right before sending
+    rather than being passed alongside the bytes.
+    """
+    suffix = path.suffix or (".mp3" if is_audio else ".mp4")
+    target = path.with_name(f"{safe_filename(title)}{suffix}")
+    if target == path:
+        return path
+    try:
+        path.rename(target)
+    except OSError as exc:  # odd filesystem, name too long, race
+        logger.debug("could not rename %s: %s", path.name, exc)
+        return path
+    return target
+
+
 async def _upload(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -602,17 +653,51 @@ async def _upload(
     result: DownloadResult,
     payload: UploadPayload,
     language: str,
+    local_mode: bool,
 ) -> Message:
-    """Send the finished file, giving it a readable filename."""
-    caption = _caption(language, url, result)
-    suffix = payload.path.suffix or (".mp3" if payload.is_audio else ".mp4")
-    filename = f"{safe_filename(result.title)}{suffix}"
+    """Send the finished file, giving it a readable filename.
 
+    With a local Bot API server the path is handed over and the server reads
+    the file itself. Opening it here instead would pull the whole thing into
+    this process's memory, which a 2 GB upload on a small VPS does not
+    survive.
+    """
+    caption = _caption(language, url, result)
     timeouts: dict[str, float] = {
         "read_timeout": UPLOAD_READ_TIMEOUT,
         "write_timeout": UPLOAD_WRITE_TIMEOUT,
         "connect_timeout": 60.0,
     }
+
+    if local_mode:
+        source = _rename_for_telegram(payload.path, result.title, payload.is_audio)
+        if payload.is_audio:
+            return await context.bot.send_audio(
+                chat_id,
+                audio=source,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                title=shorten(result.title, 64),
+                performer=shorten(result.uploader, 64),
+                duration=payload.duration,
+                **timeouts,
+            )
+        return await context.bot.send_video(
+            chat_id,
+            video=source,
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+            duration=payload.duration,
+            width=payload.width,
+            height=payload.height,
+            thumbnail=payload.thumbnail,
+            supports_streaming=True,
+            **timeouts,
+        )
+
+    # Public Bot API: 50 MB at most, so reading it in is affordable.
+    suffix = payload.path.suffix or (".mp3" if payload.is_audio else ".mp4")
+    filename = f"{safe_filename(result.title)}{suffix}"
 
     with payload.path.open("rb") as handle:
         upload = InputFile(handle, filename=filename)

@@ -109,7 +109,7 @@ class MembershipGate:
         self,
         channels: Iterable[Channel],
         *,
-        cache_seconds: float = 300.0,
+        cache_seconds: float = 120.0,
         fail_open: bool = True,
     ) -> None:
         self._channels = tuple(channels)
@@ -128,8 +128,20 @@ class MembershipGate:
         return bool(self._channels)
 
     def forget(self, user_id: int) -> None:
-        """Drop a cached verdict, so a 'I joined' tap re-checks for real."""
+        """Drop a cached verdict, so the next check asks Telegram again."""
         self._verdicts.pop(user_id, None)
+
+    def tracks(self, chat_id: int | str | None, username: str | None = None) -> bool:
+        """True when a membership change in this chat concerns the gate."""
+        candidates = set()
+        if chat_id is not None:
+            candidates.add(str(chat_id).lower())
+        if username:
+            candidates.add(f"@{username.lower()}")
+            candidates.add(username.lower())
+        return any(
+            channel.chat_id.lower() in candidates for channel in self._channels
+        )
 
     def _cached(self, user_id: int) -> bool | None:
         entry = self._verdicts.get(user_id)

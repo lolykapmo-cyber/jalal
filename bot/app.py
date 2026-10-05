@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from telegram import Update
@@ -12,6 +13,7 @@ from telegram.ext import (
     Application,
     ApplicationBuilder,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -128,6 +130,11 @@ def _register(application: Application) -> None:
         CallbackQueryHandler(commands.on_set_quality, pattern=r"^su\|")
     )
 
+    # Channel membership changes, so leaving revokes access immediately.
+    application.add_handler(
+        ChatMemberHandler(download.on_chat_member, ChatMemberHandler.CHAT_MEMBER)
+    )
+
     application.add_handler(MessageHandler(filters.Document.ALL, commands.on_document))
 
     # Anything else with text: look for links in it.
@@ -158,11 +165,32 @@ def _require_writable(path: Path, label: str) -> None:
         )
 
 
+def _sweep_stale_jobs(work_dir: Path) -> int:
+    """Delete job directories left behind by an unclean shutdown."""
+    removed = 0
+    try:
+        entries = list(work_dir.glob("job-*"))
+    except OSError:
+        return 0
+    for entry in entries:
+        if entry.is_dir():
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+    return removed
+
+
 async def _post_init(application: Application) -> None:
     container = application.bot_data[services.BOT_DATA_KEY]
     settings: Settings = container.settings
 
     _require_writable(settings.work_dir, "download directory (WORK_DIR)")
+
+    # Nothing is running yet, so every job directory here is debris from a
+    # kill -9 or a power cut. Left alone it would fill the disk over time.
+    swept = _sweep_stale_jobs(settings.work_dir)
+    if swept:
+        logger.info("removed %s leftover download director%s",
+                    swept, "y" if swept == 1 else "ies")
     _require_writable(settings.database_path.parent, "data directory (DATABASE_PATH)")
 
     await container.storage.open()

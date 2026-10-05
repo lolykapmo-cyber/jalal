@@ -19,7 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.6"
+SCRIPT_REVISION="2026-10-05.7"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -38,6 +38,7 @@ ENV_FILE="$INSTALL_DIR/.env"
 VENV_DIR="$INSTALL_DIR/.venv"
 DATA_DIR="$INSTALL_DIR/data"
 PYTHON_DIR="$INSTALL_DIR/python"
+DOWNLOAD_DIR="${DOWNLOAD_DIR:-/var/lib/jalal/downloads}"
 
 # All progress goes to stderr. Some of these are called from functions whose
 # stdout is captured (the interpreter path), and a stray message there would
@@ -113,7 +114,7 @@ else
     git clone --quiet --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
-mkdir -p "$DATA_DIR"
+mkdir -p "$DATA_DIR" "$DOWNLOAD_DIR"
 
 # ----------------------------------------------------------------- python
 # Three ways to get a new enough interpreter, cheapest first.
@@ -270,7 +271,7 @@ fi
 # absolute, writable locations. Done on every run, so an .env left over
 # from an earlier install is corrected too.
 [[ -f "$ENV_FILE" ]] || cp "$INSTALL_DIR/.env.example" "$ENV_FILE"
-set_env_var WORK_DIR "/tmp/jalal-downloads"
+set_env_var WORK_DIR "$DOWNLOAD_DIR"
 set_env_var DATABASE_PATH "$DATA_DIR/bot.sqlite3"
 
 # Defaults only: once set, these are yours to edit in .env.
@@ -288,9 +289,11 @@ say "Setting ownership and permissions"
 chown -R root:"$SERVICE_USER" "$INSTALL_DIR"
 chmod -R u=rwX,g=rX,o= "$INSTALL_DIR"
 
-# The database is the one thing the service genuinely writes.
+# The two directories the service genuinely writes.
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
+chown "$SERVICE_USER":"$SERVICE_USER" "$DOWNLOAD_DIR"
+chmod 750 "$DOWNLOAD_DIR"
 
 # The token: readable by the service, invisible to every other account.
 chown root:"$SERVICE_USER" "$ENV_FILE"
@@ -317,11 +320,11 @@ EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
 # The code directory is read-only, so skip the futile __pycache__ writes.
 Environment=PYTHONDONTWRITEBYTECODE=1
-# WORK_DIR and DATABASE_PATH deliberately live only in the EnvironmentFile.
-# Setting them here as well left two sources of truth for the same key, and
-# the bot picked the relative path from .env, which /opt is read-only for.
-# WORK_DIR points into /tmp, which PrivateTmp makes private and writable
-# and wipes on every restart, so partial downloads cannot accumulate.
+# WORK_DIR and DATABASE_PATH live only in the EnvironmentFile: setting them
+# here too left two sources of truth for one key. WORK_DIR is a real shared
+# directory rather than a private /tmp, because a local Bot API server reads
+# the finished file off disk at the exact path the bot gives it. Leftovers
+# from a hard kill are swept at startup.
 ExecStart=$VENV_DIR/bin/python -m bot
 Restart=always
 RestartSec=10
@@ -342,7 +345,7 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
 LockPersonality=true
-ReadWritePaths=$DATA_DIR
+ReadWritePaths=$DATA_DIR $DOWNLOAD_DIR
 
 [Install]
 WantedBy=multi-user.target
@@ -396,6 +399,7 @@ fi
 cat <<INFO
 
   Directory      $INSTALL_DIR
+  Downloads      $DOWNLOAD_DIR
   Settings       $ENV_FILE
   Python         $PY_VERSION
   yt-dlp         $YTDLP_VERSION
