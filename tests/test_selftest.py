@@ -345,3 +345,31 @@ async def test_history_is_capped_so_the_table_cannot_grow_forever(tmp_path):
 
     assert rows <= 50
     assert len(read_recent_successes(db, limit=10)) <= 4  # one per site
+
+
+async def test_the_checks_own_scratch_directory_is_not_a_false_positive(
+    tmp_path, monkeypatch
+):
+    """tempfile.TemporaryDirectory creates 0700, while the real pipeline
+    uses mkdir() and gets 0755. Without matching that, the check failed on
+    its own scratch directory and blamed the Bot API server."""
+    work = tmp_path / "work"          # the autouse fixture already made it
+    work.mkdir(exist_ok=True)
+    work.chmod(0o755)
+    monkeypatch.setenv("WORK_DIR", str(work))
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "absent.sqlite3"))
+    monkeypatch.setenv("SELFTEST_URLS", "http://127.0.0.1:1/nothing.mp4")
+
+    seen: list[int] = []
+    real_check = selftest.check_one
+
+    async def spy(url, settings, work_root):
+        seen.append(work_root.stat().st_mode & 0o777)
+        return await real_check(url, settings, work_root)
+
+    monkeypatch.setattr(selftest, "check_one", spy)
+    await selftest.run_checks(load_settings())
+
+    assert seen, "the check never ran"
+    for mode in seen:
+        assert mode & 0o055 == 0o055, f"scratch dir was {mode:o}, not traversable"

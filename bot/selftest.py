@@ -153,6 +153,14 @@ def _first_unreadable(path: Path, root: Path) -> Path | None:
 async def run_checks(settings: Settings) -> list[CheckResult]:
     with tempfile.TemporaryDirectory(dir=settings.work_dir, prefix="selftest-") as tmp:
         root = Path(tmp)
+        # TemporaryDirectory creates 0700 by design. The real pipeline uses
+        # mkdir(), which follows the umask and yields 0755, so without this
+        # the check fails on its own scratch directory and reports a
+        # permission problem the bot does not have.
+        try:
+            root.chmod(0o755)
+        except OSError as exc:
+            logger.warning("could not open up %s: %s", root, exc)
         # The checks are independent, so a slow site does not delay the rest.
         return list(
             await asyncio.gather(
