@@ -19,7 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.8"
+SCRIPT_REVISION="2026-10-05.9"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -374,6 +374,8 @@ Type=oneshot
 # already carries the fix.
 ExecStart=$VENV_DIR/bin/pip install --quiet --upgrade $YTDLP_PRE yt-dlp
 ExecStart=$VENV_DIR/bin/pip install --quiet --upgrade curl_cffi
+# Harmless when the PO token plugin is not installed; pip just skips it.
+ExecStart=-$VENV_DIR/bin/pip install --quiet --upgrade bgutil-ytdlp-pot-provider
 ExecStartPost=/bin/systemctl try-restart $SERVICE_NAME.service
 UNIT
 
