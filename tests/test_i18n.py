@@ -54,3 +54,29 @@ def test_quality_labels_cover_every_choice():
     for language in LANGUAGES:
         for choice in QUALITY_CHOICES:
             assert quality_label(language, choice) != choice or choice.isdigit()
+
+
+def test_every_string_renders_with_its_own_placeholders():
+    """A placeholder whose name matches one of t()'s parameters used to
+    raise TypeError instead of rendering. /settings carries {language} and
+    was dead from the day it was written; nothing here would have caught
+    that, because key parity says nothing about rendering.
+    """
+    import re
+
+    placeholder = re.compile(r"\{(\w+)\}")
+    for language in LANGUAGES:
+        for key, template in STRINGS[language].items():
+            params = {name: "x" for name in placeholder.findall(template)}
+            rendered = t(language, key, **params)
+            assert "{" not in rendered, f"{language}:{key} left a placeholder unfilled"
+
+
+def test_a_language_parameter_does_not_collide():
+    rendered = t("ar", "settings", language="العربية", quality="720p", ask="on")
+    assert "العربية" in rendered
+    assert "720p" in rendered
+
+
+def test_quality_label_cannot_collide_either():
+    assert quality_label("ar", "720") == "720p"

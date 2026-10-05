@@ -279,8 +279,15 @@ def normalize_language(language: str | None) -> str:
     return DEFAULT_LANGUAGE if not code else "en"
 
 
-def t(language: str | None, key: str, **params: Any) -> str:
-    """Look up a string, falling back to English and then to the key."""
+def t(language: str | None, key: str, /, **params: Any) -> str:
+    """Look up a string, falling back to English and then to the key.
+
+    The two leading parameters are positional-only. Without that, a string
+    carrying a {language} or {key} placeholder cannot be rendered at all:
+    the keyword argument collides with the parameter name and raises
+    TypeError. /settings carried exactly that collision and had never once
+    worked.
+    """
     lang = language if language in STRINGS else DEFAULT_LANGUAGE
     template = STRINGS[lang].get(key) or STRINGS["en"].get(key) or key
     if not params:
@@ -291,6 +298,6 @@ def t(language: str | None, key: str, **params: Any) -> str:
         return template
 
 
-def quality_label(language: str | None, quality: str) -> str:
+def quality_label(language: str | None, quality: str, /) -> str:
     lang = language if language in QUALITY_LABELS else DEFAULT_LANGUAGE
     return QUALITY_LABELS[lang].get(quality, quality)

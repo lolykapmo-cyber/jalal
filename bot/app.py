@@ -259,6 +259,13 @@ async def _post_init(application: Application) -> None:
     except Exception:  # noqa: BLE001 - cosmetic
         pass
 
+    if not settings.admin_users:
+        logger.warning(
+            "ADMIN_USERS is empty: /stats and /health are unavailable to "
+            "everyone, and the self-test has nobody to alert when a download "
+            "breaks. Set ADMIN_USERS to your numeric Telegram id in .env."
+        )
+
     me = application.bot
     logger.info(
         "ready as @%s | upload limit %s MB | workers %s | allow-list %s",

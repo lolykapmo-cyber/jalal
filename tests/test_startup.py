@@ -84,3 +84,30 @@ def test_an_unwritable_directory_is_rejected(tmp_path):
     locked.mkdir(mode=0o555)
     with pytest.raises(SystemExit, match="cannot write"):
         _require_writable(locked, "download directory")
+
+
+def test_settings_text_renders_in_both_languages():
+    """The /settings reply, end to end. It raised TypeError in production
+    while every unit test around it passed."""
+    from bot.handlers.commands import _settings_text
+    from bot.storage import UserPrefs
+
+    for language, expected in (("ar", "العربية"), ("en", "English")):
+        prefs = UserPrefs(1, language, "720", True, 0)
+        text = _settings_text(prefs)
+        assert expected in text
+        assert "720p" in text
+        assert "{" not in text
+
+
+def test_settings_keyboard_builds_for_both_languages():
+    from bot.handlers import keyboards
+    from bot.storage import UserPrefs
+
+    for language in ("ar", "en"):
+        prefs = UserPrefs(1, language, "best", False, 0)
+        rows = keyboards.settings_keyboard(language, prefs).inline_keyboard
+        assert rows
+        for row in rows:
+            for button in row:
+                assert button.text and "{" not in button.text
