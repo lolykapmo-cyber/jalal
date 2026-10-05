@@ -48,6 +48,16 @@ def _decimal(name: str, default: float, minimum: float = 0.0) -> float:
         raise ConfigError(f"{name} must be a number, got {raw!r}") from exc
 
 
+def _path(name: str, default: str) -> Path:
+    """Read a path setting as an absolute path.
+
+    A relative value would otherwise resolve against whatever directory the
+    service happened to start in, which under systemd is the read-only
+    project directory.
+    """
+    return Path(_text(name, default)).expanduser().resolve()
+
+
 def _id_set(name: str) -> frozenset[int]:
     raw = _text(name)
     if not raw:
@@ -118,11 +128,11 @@ def load_settings(*, require_token: bool = True) -> Settings:
     default_limit = LOCAL_UPLOAD_LIMIT_MB if local_mode else STANDARD_UPLOAD_LIMIT_MB
     upload_limit_mb = _number("UPLOAD_LIMIT_MB", default_limit, minimum=1)
 
-    work_dir = Path(_text("WORK_DIR", "downloads")).expanduser()
-    database_path = Path(_text("DATABASE_PATH", "data/bot.sqlite3")).expanduser()
+    work_dir = _path("WORK_DIR", "downloads")
+    database_path = _path("DATABASE_PATH", "data/bot.sqlite3")
 
     cookies_raw = _text("COOKIES_FILE")
-    cookies_file = Path(cookies_raw).expanduser() if cookies_raw else None
+    cookies_file = _path("COOKIES_FILE", cookies_raw) if cookies_raw else None
 
     quality = _text("DEFAULT_QUALITY", "best").lower()
     if quality not in {"best", "1080", "720", "480", "360", "audio"}:

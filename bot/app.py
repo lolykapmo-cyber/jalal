@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import (
@@ -125,11 +127,31 @@ def _register(application: Application) -> None:
     application.add_error_handler(errors.on_error)
 
 
+def _require_writable(path: Path, label: str) -> None:
+    """Fail with an actionable sentence rather than an OSError traceback."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SystemExit(
+            f"Cannot create the {label} at {path}: {exc}\n"
+            "Point it at an absolute path this service can write to. Under "
+            "systemd with ProtectSystem=strict the project directory is "
+            "read-only, so use somewhere like /tmp/jalal-downloads and list "
+            "any other writable location in ReadWritePaths."
+        ) from exc
+    if not os.access(path, os.W_OK):
+        raise SystemExit(
+            f"The {label} at {path} exists but this user cannot write to it."
+        )
+
+
 async def _post_init(application: Application) -> None:
     container = application.bot_data[services.BOT_DATA_KEY]
     settings: Settings = container.settings
 
-    settings.work_dir.mkdir(parents=True, exist_ok=True)
+    _require_writable(settings.work_dir, "download directory (WORK_DIR)")
+    _require_writable(settings.database_path.parent, "data directory (DATABASE_PATH)")
+
     await container.storage.open()
 
     pruned = await container.storage.cache_prune(ttl_hours=settings.cache_ttl_hours)

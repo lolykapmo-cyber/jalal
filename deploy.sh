@@ -34,6 +34,15 @@ PYTHON_DIR="$INSTALL_DIR/python"
 # All progress goes to stderr. Some of these are called from functions whose
 # stdout is captured (the interpreter path), and a stray message there would
 # be read back as part of the path.
+set_env_var() {
+    local key="$1" value="$2"
+    if grep -qE "^${key}=" "$ENV_FILE"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    fi
+}
+
 say()  { printf '\n\033[1;36m==>\033[0m %s\n' "$1" >&2; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$1" >&2; }
 info() { printf '    %s\n' "$1" >&2; }
@@ -225,14 +234,17 @@ else
         || die "That does not look like a bot token (expected 123456789:AA...)."
 
     [[ -f "$ENV_FILE" ]] || cp "$INSTALL_DIR/.env.example" "$ENV_FILE"
-    # Replace the placeholder line rather than appending a duplicate.
-    if grep -qE '^BOT_TOKEN=' "$ENV_FILE"; then
-        sed -i "s|^BOT_TOKEN=.*|BOT_TOKEN=$TOKEN|" "$ENV_FILE"
-    else
-        printf 'BOT_TOKEN=%s\n' "$TOKEN" >> "$ENV_FILE"
-    fi
+    set_env_var BOT_TOKEN "$TOKEN"
     unset TOKEN
 fi
+
+# The shipped .env.example uses paths relative to the project directory,
+# which systemd runs read-only under ProtectSystem=strict. Rewrite them to
+# absolute, writable locations. Done on every run, so an .env left over
+# from an earlier install is corrected too.
+[[ -f "$ENV_FILE" ]] || cp "$INSTALL_DIR/.env.example" "$ENV_FILE"
+set_env_var WORK_DIR "/tmp/jalal-downloads"
+set_env_var DATABASE_PATH "$DATA_DIR/bot.sqlite3"
 
 # --------------------------------------------------------------- ownership
 say "Setting ownership and permissions"
@@ -257,10 +269,11 @@ Group=$SERVICE_USER
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
-# PrivateTmp gives the service its own /tmp, wiped on every restart, so
-# half-finished downloads can never accumulate on disk.
-Environment=WORK_DIR=/tmp/jalal-downloads
-Environment=DATABASE_PATH=$DATA_DIR/bot.sqlite3
+# WORK_DIR and DATABASE_PATH deliberately live only in the EnvironmentFile.
+# Setting them here as well left two sources of truth for the same key, and
+# the bot picked the relative path from .env, which /opt is read-only for.
+# WORK_DIR points into /tmp, which PrivateTmp makes private and writable
+# and wipes on every restart, so partial downloads cannot accumulate.
 ExecStart=$VENV_DIR/bin/python -m bot
 Restart=always
 RestartSec=10
