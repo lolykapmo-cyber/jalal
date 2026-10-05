@@ -169,7 +169,10 @@ def load_settings(*, require_token: bool = True) -> Settings:
         required_channels=_text("REQUIRED_CHANNELS"),
         membership_cache_seconds=_decimal("MEMBERSHIP_CACHE_SECONDS", 300.0),
         membership_fail_open=_flag("MEMBERSHIP_FAIL_OPEN", True),
-        min_free_disk_mb=_number("MIN_FREE_DISK_MB", 1024),
+        # A fixed floor made sense at a 50 MB ceiling. With a local Bot API
+        # server the ceiling is 2 GB, and a job needs room for the download
+        # plus a possible re-encode, so scale the floor with it.
+        min_free_disk_mb=_number("MIN_FREE_DISK_MB", max(1024, upload_limit_mb * 2)),
         cache_ttl_hours=_number("CACHE_TTL_HOURS", 72),
         transcode_oversized=_flag("TRANSCODE_OVERSIZED", True),
         default_language=language,
