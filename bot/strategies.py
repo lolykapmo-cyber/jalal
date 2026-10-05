@@ -79,6 +79,14 @@ def impersonation_available() -> bool:
 # ---------------------------------------------------------------------------
 
 _YOUTUBE_LADDER: tuple[Strategy, ...] = (
+    # yt-dlp's own client selection goes first. It is maintained against
+    # YouTube continuously and knows which clients currently work and what a
+    # PO token provider changes; a hardcoded list here is a snapshot of one
+    # day's assumptions and ages badly. Pinning player_client overrides that
+    # judgement, so the entries below are a fallback for when the maintained
+    # default is itself the thing that broke.
+    Strategy("yt/default", {}),
+    Strategy("yt/default+chrome", {}, impersonate="chrome"),
     Strategy("yt/tv", {"youtube": {"player_client": ["tv"]}}),
     Strategy("yt/tv_simply", {"youtube": {"player_client": ["tv_simply"]}}),
     Strategy("yt/android_vr", {"youtube": {"player_client": ["android_vr"]}}),
@@ -88,7 +96,6 @@ _YOUTUBE_LADDER: tuple[Strategy, ...] = (
         {"youtube": {"player_client": ["web_safari"]}},
         impersonate="safari",
     ),
-    Strategy("yt/default", {}),
 )
 
 # Instagram and Facebook gate hardest on the TLS fingerprint, so a real

@@ -11,8 +11,8 @@ from bot.strategies import Strategy, is_retryable, ladder_for
 
 
 @pytest.mark.parametrize("url,first_label", [
-    ("https://youtu.be/x", "yt/tv"),
-    ("https://www.youtube.com/watch?v=x", "yt/tv"),
+    ("https://youtu.be/x", "yt/default"),
+    ("https://www.youtube.com/watch?v=x", "yt/default"),
     ("https://www.instagram.com/reel/x/", "meta/chrome"),
     ("https://www.tiktok.com/@a/video/1", "tiktok/default"),
     ("https://x.com/u/status/1", "x/syndication"),
@@ -199,6 +199,20 @@ def test_the_default_cap_covers_every_ladder(monkeypatch):
                 "https://www.tiktok.com/@a/video/1", "https://x.com/u/status/1",
                 "https://other.example/v"):
         assert len(ladder_for(url)) <= DEFAULT_MAX_ATTEMPTS, url
+
+
+def test_youtube_defers_to_yt_dlp_before_pinning_a_client(monkeypatch):
+    """Pinning player_client overrides judgement that upstream maintains
+    daily. The pinned clients are a fallback, not the first thing tried."""
+    monkeypatch.setattr(strategies, "impersonation_available", lambda: True)
+    rungs = ladder_for("https://youtu.be/x")
+
+    assert not rungs[0].extractor_args, "the first rung must not pin a client"
+
+    first_pinned = next(
+        i for i, s in enumerate(rungs) if s.extractor_args.get("youtube")
+    )
+    assert first_pinned >= 1
 
 
 def test_youtube_keeps_its_impersonation_rungs(monkeypatch):
