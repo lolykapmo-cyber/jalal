@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# One-command install on a fresh Ubuntu/Debian VPS.
+# One-command install on a fresh Debian/Ubuntu VPS.
 #
 #   sudo bash deploy.sh
 #
-# Creates a dedicated directory and system user, installs ffmpeg and the
-# Python dependencies into a virtualenv, registers a systemd service, and
-# schedules a nightly yt-dlp update. Re-running it is safe: the service is
-# updated in place and an existing token is kept.
+# Creates a dedicated directory and system user, makes sure a new enough
+# Python is present, installs ffmpeg and the dependencies into a virtualenv,
+# registers a systemd service, and schedules a nightly yt-dlp update.
+# Re-running it is safe: the code is updated in place and the token is kept.
 #
 # The bot token is typed at a prompt, never passed as an argument, so it
 # stays out of your shell history and out of the process list.
@@ -18,88 +18,42 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/jalal}"
 SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
-
-# yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10 or
-# newer. Ubuntu 20.04 still ships 3.8, where pip silently resolves to a
-# yt-dlp from 2024 that no longer works against current sites.
-MIN_PYTHON_MINOR="${MIN_PYTHON_MINOR:-10}"
-PYTHON_SERIES="${PYTHON_SERIES:-3.11}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
+
+# yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
+# Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
+# 2024 that current sites reject.
+MIN_PYTHON_MINOR="${MIN_PYTHON_MINOR:-10}"
+PYTHON_SERIES="${PYTHON_SERIES:-3.12}"
 
 ENV_FILE="$INSTALL_DIR/.env"
 VENV_DIR="$INSTALL_DIR/.venv"
 DATA_DIR="$INSTALL_DIR/data"
+PYTHON_DIR="$INSTALL_DIR/python"
 
-say()  { printf '\n\033[1;36m==>\033[0m %s\n' "$1"; }
-warn() { printf '\033[1;33m[!]\033[0m %s\n' "$1"; }
+# All progress goes to stderr. Some of these are called from functions whose
+# stdout is captured (the interpreter path), and a stray message there would
+# be read back as part of the path.
+say()  { printf '\n\033[1;36m==>\033[0m %s\n' "$1" >&2; }
+warn() { printf '\033[1;33m[!]\033[0m %s\n' "$1" >&2; }
+info() { printf '    %s\n' "$1" >&2; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$1" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Run this with sudo: sudo bash deploy.sh"
 command -v apt-get >/dev/null || die "This script targets Debian/Ubuntu (apt-get not found)."
+
+# shellcheck disable=SC1091
+[[ -r /etc/os-release ]] && . /etc/os-release
+say "Host: ${PRETTY_NAME:-unknown} (${ID:-?} ${VERSION_ID:-?})"
 
 # ---------------------------------------------------------------- packages
 say "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-    ffmpeg git ca-certificates curl build-essential \
-    software-properties-common
-
-# ------------------------------------------------------------------ python
-# shellcheck disable=SC1091
-[[ -r /etc/os-release ]] && . /etc/os-release
-
-# Print the path of the first interpreter that is new enough, newest first.
-find_python() {
-    local candidate resolved
-    for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
-        resolved="$(command -v "$candidate" 2>/dev/null)" || continue
-        if "$resolved" -c \
-            "import sys; sys.exit(0 if sys.version_info[:2] >= (3, $MIN_PYTHON_MINOR) else 1)" \
-            2>/dev/null; then
-            printf '%s\n' "$resolved"
-            return 0
-        fi
-    done
-    return 1
-}
-
-install_python_series() {
-    local series="$1"
-    say "System Python is older than 3.$MIN_PYTHON_MINOR; installing Python $series"
-    if [[ "${ID:-}" == "ubuntu" ]]; then
-        # deadsnakes carries current Python builds for older Ubuntu releases.
-        add-apt-repository -y ppa:deadsnakes/ppa >/dev/null 2>&1 \
-            || warn "Could not add the deadsnakes PPA; trying the distro archive instead."
-        apt-get update -qq
-    fi
-    apt-get install -y -qq --no-install-recommends \
-        "python$series" "python$series-venv" "python$series-dev"
-}
-
-PYTHON_BIN="$(find_python || true)"
-if [[ -z "$PYTHON_BIN" ]]; then
-    install_python_series "$PYTHON_SERIES" || true
-    PYTHON_BIN="$(find_python || true)"
-fi
-
-if [[ -z "$PYTHON_BIN" ]]; then
-    die "Could not find or install Python 3.$MIN_PYTHON_MINOR+.
-   yt-dlp, python-telegram-bot and curl_cffi all require it, and on an older
-   Python pip resolves to a yt-dlp from 2024 that current sites reject.
-   Install a newer Python by hand, then re-run with:
-     sudo PYTHON_SERIES=3.11 bash deploy.sh
-   Or use the Docker route, which bundles its own Python."
-fi
-
-PY_VERSION="$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-say "Using Python $PY_VERSION at $PYTHON_BIN"
-
-# On Debian/Ubuntu, venv ships separately from the interpreter.
-if ! "$PYTHON_BIN" -c 'import venv, ensurepip' 2>/dev/null; then
-    apt-get install -y -qq --no-install-recommends "python$PY_VERSION-venv" \
-        || die "Could not install python$PY_VERSION-venv, which is needed to build the virtualenv."
-fi
+    ffmpeg git curl ca-certificates build-essential \
+    python3 python3-pip python3-venv software-properties-common \
+    || die "apt-get could not install the base packages."
 
 # ------------------------------------------------------------------- user
 if id "$SERVICE_USER" &>/dev/null; then
@@ -119,28 +73,141 @@ if [[ -d "$INSTALL_DIR/.git" ]]; then
 else
     say "Cloning into $INSTALL_DIR"
     mkdir -p "$(dirname "$INSTALL_DIR")"
+    # git refuses a non-empty target, so clone first and add the rest after.
     git clone --quiet --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
 fi
 
 mkdir -p "$DATA_DIR"
 
+# ----------------------------------------------------------------- python
+# Three ways to get a new enough interpreter, cheapest first.
+
+python_is_new_enough() {
+    "$1" -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3, $MIN_PYTHON_MINOR) else 1)" \
+        2>/dev/null
+}
+
+# 1. Something already on PATH.
+find_system_python() {
+    local candidate resolved
+    for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+        resolved="$(command -v "$candidate" 2>/dev/null)" || continue
+        if python_is_new_enough "$resolved"; then
+            printf '%s\n' "$resolved"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# 2. Distro packages. deadsnakes backports current Pythons to older Ubuntu,
+#    but it is not available everywhere, so a failure here is not fatal.
+install_python_from_apt() {
+    local log
+    if [[ "${ID:-}" == "ubuntu" ]]; then
+        info "Trying the deadsnakes PPA..."
+        if log="$(add-apt-repository -y ppa:deadsnakes/ppa 2>&1)"; then
+            apt-get update -qq || true
+        else
+            warn "deadsnakes is unavailable on this host:"
+            printf '%s\n' "$log" | tail -4 | sed 's/^/        /'
+        fi
+    fi
+    log="$(apt-get install -y -qq --no-install-recommends \
+            "python$PYTHON_SERIES" "python$PYTHON_SERIES-venv" \
+            "python$PYTHON_SERIES-dev" 2>&1)" && return 0
+    info "apt has no python$PYTHON_SERIES packages:"
+    printf '%s\n' "$log" | grep -E '^E:' | head -3 | sed 's/^/        /' || true
+    return 1
+}
+
+# 3. A standalone CPython build, downloaded by uv. No repositories, no
+#    compiling, and it works on any glibc Linux. This is the reliable path.
+ensure_uv() {
+    export PATH="/root/.local/bin:/usr/local/bin:$PATH"
+    command -v uv >/dev/null 2>&1 && return 0
+    info "Installing uv..."
+    python3 -m pip install --quiet --upgrade uv >/dev/null 2>&1 || true
+    command -v uv >/dev/null 2>&1 && return 0
+    # Astral's official installer, used only if PyPI did not work.
+    curl -LsSf https://astral.sh/uv/install.sh 2>/dev/null | sh >/dev/null 2>&1 || true
+    export PATH="$HOME/.local/bin:$PATH"
+    command -v uv >/dev/null 2>&1
+}
+
+install_python_standalone() {
+    ensure_uv || { info "Could not install uv."; return 1; }
+
+    info "Downloading a standalone Python $PYTHON_SERIES (about 30 MB)..."
+    mkdir -p "$PYTHON_DIR"
+    # Keep it inside the bot's own directory: the service user must be able
+    # to read it, and systemd's ProtectHome would hide anything under /root.
+    # The "failed to install executable" warning is harmless; the interpreter
+    # is located by path below rather than by a shim on PATH.
+    UV_PYTHON_INSTALL_DIR="$PYTHON_DIR" uv python install "$PYTHON_SERIES" \
+        >/dev/null 2>&1 || true
+
+    local found
+    found="$(find "$PYTHON_DIR" -type f -perm -u+x -name "python$PYTHON_SERIES" 2>/dev/null | head -1)"
+    if [[ -z "$found" ]]; then
+        found="$(find "$PYTHON_DIR" -type f -perm -u+x -name 'python3.*' 2>/dev/null | head -1)"
+    fi
+    [[ -n "$found" ]] || return 1
+    python_is_new_enough "$found" || return 1
+    # A venv needs both of these, and a stripped build can lack them.
+    "$found" -c 'import venv, ensurepip' 2>/dev/null || return 1
+    printf '%s\n' "$found"
+}
+
+say "Locating a Python $MIN_PYTHON_MINOR-compatible interpreter"
+PYTHON_BIN="$(find_system_python || true)"
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    warn "System Python is older than 3.$MIN_PYTHON_MINOR; installing Python $PYTHON_SERIES"
+    install_python_from_apt || true
+    PYTHON_BIN="$(find_system_python || true)"
+fi
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    PYTHON_BIN="$(install_python_standalone || true)"
+fi
+
+[[ -n "$PYTHON_BIN" ]] || die "Could not find or install Python 3.$MIN_PYTHON_MINOR+.
+   yt-dlp, python-telegram-bot and curl_cffi all require it. Options:
+     - Use Docker instead; it bundles its own Python:
+         cd $INSTALL_DIR && docker compose up -d
+     - Install a Python by hand, then re-run this script.
+   If the standalone download failed, this host may not reach
+   github.com releases; check its outbound network."
+
+PY_VERSION="$("$PYTHON_BIN" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"
+say "Using Python $PY_VERSION at $PYTHON_BIN"
+
 # --------------------------------------------------------------- virtualenv
 say "Installing Python dependencies"
 
-# A virtualenv left over from an older interpreter cannot be upgraded in
-# place, so replace it rather than failing on the dependency resolve.
-if [[ -x "$VENV_DIR/bin/python" ]] && ! "$VENV_DIR/bin/python" -c \
-    "import sys; sys.exit(0 if sys.version_info[:2] >= (3, $MIN_PYTHON_MINOR) else 1)" \
-    2>/dev/null; then
+# A virtualenv built by an older interpreter cannot be upgraded in place,
+# so replace it rather than failing on the dependency resolve. This is what
+# a re-run after a failed install needs.
+if [[ -x "$VENV_DIR/bin/python" ]] && ! python_is_new_enough "$VENV_DIR/bin/python"; then
     warn "Rebuilding the virtualenv on Python $PY_VERSION"
     rm -rf "$VENV_DIR"
 fi
 
 [[ -x "$VENV_DIR/bin/python" ]] || "$PYTHON_BIN" -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip wheel
-"$VENV_DIR/bin/pip" install --quiet --upgrade -r "$INSTALL_DIR/requirements.txt"
+"$VENV_DIR/bin/pip" install --quiet --upgrade -r "$INSTALL_DIR/requirements.txt" \
+    || die "Dependency install failed. The output above says why."
 
-say "Installed: $("$VENV_DIR/bin/python" -m yt_dlp --version 2>/dev/null || echo 'yt-dlp missing')"
+YTDLP_VERSION="$("$VENV_DIR/bin/python" -m yt_dlp --version 2>/dev/null || echo unknown)"
+say "yt-dlp $YTDLP_VERSION"
+case "$YTDLP_VERSION" in
+    2019.*|2020.*|2021.*|2022.*|2023.*|2024.*)
+        warn "That build is old enough that many sites will refuse it."
+        warn "It means pip fell back for a Python it could satisfy. Re-run with:"
+        warn "    sudo PYTHON_SERIES=3.12 bash deploy.sh"
+        ;;
+esac
 
 # ------------------------------------------------------------------ token
 if [[ -f "$ENV_FILE" ]] && grep -qE '^BOT_TOKEN=.+' "$ENV_FILE"; then
@@ -267,6 +334,8 @@ cat <<INFO
 
   Directory      $INSTALL_DIR
   Settings       $ENV_FILE
+  Python         $PY_VERSION
+  yt-dlp         $YTDLP_VERSION
   Live logs      journalctl -u $SERVICE_NAME -f
   Restart        systemctl restart $SERVICE_NAME
   Stop           systemctl stop $SERVICE_NAME

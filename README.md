@@ -250,13 +250,24 @@ bot/
 
 Python لديك قديم (أقل من 3.10). يحدث هذا على Ubuntu 20.04 الذي يأتي بـ 3.8.
 pip يتراجع صامتاً لآخر نسخة تدعم 3.8 — وهي من 2024 ولم تعد تعمل مع المواقع
-الحالية. أعد تشغيل السكربت وسيثبّت Python 3.11 تلقائياً:
+الحالية. أعد تشغيل السكربت:
 
 ```bash
 sudo bash deploy.sh
 ```
 
-ولتحديد نسخة أخرى: `sudo PYTHON_SERIES=3.12 bash deploy.sh`
+يجرّب السكربت ثلاث طرق بالترتيب للحصول على Python حديث:
+
+1. مفسّر موجود على النظام أصلاً
+2. حزم التوزيعة (مستودع deadsnakes على أوبنتو)
+3. **نسخة CPython جاهزة يُنزّلها `uv`** — حوالي ٣٠ ميغابايت، بلا مستودعات
+   ولا تصريف، وتعمل على أي توزيعة Linux. تُثبَّت داخل `/opt/jalal/python`
+   ليقرأها مستخدم الخدمة.
+
+الطريقة الثالثة هي شبكة الأمان: إن فشلت الأولى والثانية — كما يحدث حين لا
+يصل سيرفرك لمستودع deadsnakes — فهي تعمل على أي حال.
+
+ولتحديد نسخة أخرى: `sudo PYTHON_SERIES=3.11 bash deploy.sh`
 
 **البوت لا يرد على تليكرام**
 
@@ -431,8 +442,12 @@ tests skip themselves if ffmpeg isn't installed.
 **`No matching distribution found for yt-dlp>=2025.1.15`** — your Python is
 older than 3.10 (Ubuntu 20.04 ships 3.8). pip quietly falls back to the last
 release that supported it, from 2024, which current sites reject. Re-run
-`sudo bash deploy.sh`; it installs Python 3.11. Pick another series with
-`sudo PYTHON_SERIES=3.12 bash deploy.sh`.
+`sudo bash deploy.sh`: it tries the system Python, then distro packages
+(deadsnakes on Ubuntu), then downloads a standalone CPython with `uv` — about
+30 MB, no repositories and no compiling, into `/opt/jalal/python` where the
+service user can read it. That third rung is the safety net for hosts that
+cannot reach deadsnakes. Pick another series with
+`sudo PYTHON_SERIES=3.11 bash deploy.sh`.
 
 **The bot doesn't answer** — check `systemctl status jalal-bot` and
 `journalctl -u jalal-bot -n 50`. Usually a wrong token in `/opt/jalal/.env`.
