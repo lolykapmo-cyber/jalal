@@ -159,7 +159,7 @@ install_python_standalone() {
     printf '%s\n' "$found"
 }
 
-say "Locating a Python $MIN_PYTHON_MINOR-compatible interpreter"
+say "Locating a Python 3.$MIN_PYTHON_MINOR+ interpreter"
 PYTHON_BIN="$(find_system_python || true)"
 
 if [[ -z "$PYTHON_BIN" ]]; then
