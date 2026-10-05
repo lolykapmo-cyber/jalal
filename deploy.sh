@@ -34,6 +34,12 @@ PYTHON_DIR="$INSTALL_DIR/python"
 # All progress goes to stderr. Some of these are called from functions whose
 # stdout is captured (the interpreter path), and a stray message there would
 # be read back as part of the path.
+# git refuses to operate on a repository owned by another user. Scoping
+# the exception to this one command keeps it out of root's global gitconfig.
+git_repo() {
+    git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" "$@"
+}
+
 set_env_var() {
     local key="$1" value="$2"
     if grep -qE "^${key}=" "$ENV_FILE"; then
@@ -76,9 +82,9 @@ fi
 # ------------------------------------------------------------------- code
 if [[ -d "$INSTALL_DIR/.git" ]]; then
     say "Updating the existing checkout in $INSTALL_DIR"
-    git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
-    git -C "$INSTALL_DIR" fetch --quiet origin "$BRANCH"
-    git -C "$INSTALL_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+    git_repo remote set-url origin "$REPO_URL"
+    git_repo fetch --quiet origin "$BRANCH"
+    git_repo checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 else
     say "Cloning into $INSTALL_DIR"
     mkdir -p "$(dirname "$INSTALL_DIR")"
@@ -248,10 +254,22 @@ set_env_var DATABASE_PATH "$DATA_DIR/bot.sqlite3"
 
 # --------------------------------------------------------------- ownership
 say "Setting ownership and permissions"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-chmod 750 "$INSTALL_DIR"
-chmod 600 "$ENV_FILE"          # the token is readable only by the service user
+
+# Code, virtualenv and interpreter stay owned by root and are only readable
+# by the service user. The bot cannot rewrite the code it runs, and git --
+# which is run as root on every update -- is not looking at a repository
+# owned by somebody else. Capital X keeps the execute bit on directories
+# and on the binaries that already had it, without adding it to sources.
+chown -R root:"$SERVICE_USER" "$INSTALL_DIR"
+chmod -R u=rwX,g=rX,o= "$INSTALL_DIR"
+
+# The database is the one thing the service genuinely writes.
+chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
+
+# The token: readable by the service, invisible to every other account.
+chown root:"$SERVICE_USER" "$ENV_FILE"
+chmod 640 "$ENV_FILE"
 
 # ----------------------------------------------------------------- service
 say "Writing the systemd service"
@@ -269,6 +287,8 @@ Group=$SERVICE_USER
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
+# The code directory is read-only, so skip the futile __pycache__ writes.
+Environment=PYTHONDONTWRITEBYTECODE=1
 # WORK_DIR and DATABASE_PATH deliberately live only in the EnvironmentFile.
 # Setting them here as well left two sources of truth for the same key, and
 # the bot picked the relative path from .env, which /opt is read-only for.
