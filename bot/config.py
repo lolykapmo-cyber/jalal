@@ -84,6 +84,7 @@ class Settings:
     cooldown_seconds: float
     max_duration_seconds: int
     max_playlist_items: int
+    max_attempts: int
     cache_ttl_hours: int
     transcode_oversized: bool
     default_language: str
@@ -150,6 +151,7 @@ def load_settings(*, require_token: bool = True) -> Settings:
         cooldown_seconds=_decimal("COOLDOWN_SECONDS", 3.0),
         max_duration_seconds=_number("MAX_DURATION_SECONDS", 3 * 60 * 60),
         max_playlist_items=_number("MAX_PLAYLIST_ITEMS", 1, minimum=1),
+        max_attempts=_number("MAX_DOWNLOAD_ATTEMPTS", 4, minimum=1),
         cache_ttl_hours=_number("CACHE_TTL_HOURS", 72),
         transcode_oversized=_flag("TRANSCODE_OVERSIZED", True),
         default_language=language,

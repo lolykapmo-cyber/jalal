@@ -28,8 +28,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• الحد الأقصى للرفع عبر تليكرام هو <b>{limit}</b>؛ الملفات الأكبر "
             "يُعاد ترميزها تلقائياً لتناسب الحد.\n"
             "• أقصى مدة مسموحة: <b>{duration}</b>.\n"
-            "• الفيديوهات الخاصة أو التي تتطلب تسجيل دخول تحتاج ملف "
-            "<code>cookies.txt</code> من إعداد المشرف.\n"
+            "• المحتوى الخاص أو المحدود لمتابعين لا يمكن تحميله.\n"
             "• أرسل عدة روابط في رسالة واحدة وسأعالجها بالترتيب.\n\n"
             "<b>الأوامر:</b>\n"
             "/settings — الإعدادات\n"
@@ -98,8 +97,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "cookies_saved": "✅ تم حفظ ملف الكوكيز ({size}).",
         "cookies_hint": "أرسل ملف <code>cookies.txt</code> كمستند لتحديثه.",
         "err_login": (
-            "🔒 هذا المحتوى يتطلب تسجيل دخول.\n"
-            "يحتاج المشرف إلى إعداد ملف <code>cookies.txt</code>."
+            "🔒 تعذّر الوصول لهذا المحتوى بعد تجربة عدة طرق.\n"
+            "عادةً يعني أنه خاص، أو محدود لمتابعين، أو محمي بتسجيل دخول."
         ),
         "err_private": "🔒 هذا الفيديو خاص أو محمي ولا يمكن الوصول إليه.",
         "err_geo": "🌍 هذا المحتوى محجوب جغرافياً في منطقة السيرفر.",
@@ -135,8 +134,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• Telegram caps uploads at <b>{limit}</b>; bigger files are "
             "re-encoded automatically to fit.\n"
             "• Maximum duration: <b>{duration}</b>.\n"
-            "• Private or login-walled posts need a <code>cookies.txt</code> "
-            "configured by the admin.\n"
+            "• Private or followers-only posts can't be downloaded.\n"
             "• Send several links in one message and I'll queue them.\n\n"
             "<b>Commands:</b>\n"
             "/settings — settings\n"
@@ -205,8 +203,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "cookies_saved": "✅ Cookies file saved ({size}).",
         "cookies_hint": "Send a <code>cookies.txt</code> document to update it.",
         "err_login": (
-            "🔒 This content requires a login.\n"
-            "The admin needs to configure a <code>cookies.txt</code> file."
+            "🔒 Couldn't reach this content after trying several methods.\n"
+            "That usually means it's private, followers-only or login-walled."
         ),
         "err_private": "🔒 This video is private or protected.",
         "err_geo": "🌍 This content is geo-blocked in the server's region.",

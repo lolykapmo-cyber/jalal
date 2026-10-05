@@ -120,6 +120,7 @@ async def _offer_qualities(
             cookies_file=svc.settings.cookies_file,
             proxy=svc.settings.proxy,
             max_playlist_items=svc.settings.max_playlist_items,
+            max_attempts=svc.settings.max_attempts,
         )
     except DownloadFailure as failure:
         await _show_failure(placeholder, prefs.language, failure)
@@ -333,6 +334,7 @@ async def _run_job(
                     max_playlist_items=svc.settings.max_playlist_items,
                     progress_hook=reporter.hook,
                     cancel_token=cancel_token,
+                    max_attempts=svc.settings.max_attempts,
                 )
 
                 # Now that we know the real id, use the precise cache key.

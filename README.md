@@ -11,6 +11,9 @@
 
 - **أكثر من ١٠٠٠ موقع** عبر `yt-dlp`: يوتيوب، تيك توك، إنستغرام، فيسبوك،
   X/تويتر، ريديت، سناب شات، تويتش، فيميو، ساوندكلاود وغيرها.
+- **بدون كوكيز ولا تسجيل دخول**: عند الرفض، يعيد البوت المحاولة منتحلاً
+  عميلاً مختلفاً — تطبيق تلفاز، ثم هاتف، ثم متصفح حقيقي ببصمة TLS كاملة.
+- **تحديث تلقائي لـ yt-dlp** كل ليلة، وهو أهم عامل في استمرار العمل.
 - **اختيار الجودة** بأزرار تفاعلية — ولا يُعرض إلا ما يوفّره الموقع فعلاً.
 - **استخراج الصوت** بصيغة MP3 بجودة 192kbps.
 - **شريط تقدّم مباشر** يُحدَّث أثناء التحميل، مع السرعة والوقت المتبقي.
@@ -46,7 +49,25 @@ cp .env.example .env
 
 ### ٣. شغّل البوت
 
-**بـ Docker (الأسهل — ffmpeg مُضمَّن):**
+**على سيرفر VPS بأمر واحد (الأسهل والموصى به):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lolykapmo-cyber/jalal/claude/epic-euler-mfpvcq/deploy.sh -o deploy.sh
+less deploy.sh          # اقرأه قبل تشغيله بصلاحيات root
+sudo bash deploy.sh
+```
+
+يُنشئ السكربت مجلداً خاصاً (`/opt/jalal`) ومستخدم نظام مخصّصاً، ويثبّت
+ffmpeg والاعتماديات، ويسجّل خدمة systemd تعمل تلقائياً عند الإقلاع، ويجدول
+تحديث yt-dlp الليلي. يطلب التوكن في موجّه مخفي — فلا يظهر في سجل الأوامر
+ولا في قائمة العمليات. تشغيله مرة ثانية يحدّث الكود ويحفظ التوكن.
+
+```bash
+journalctl -u jalal-bot -f      # متابعة السجلات
+systemctl restart jalal-bot     # إعادة التشغيل
+```
+
+**بـ Docker (ffmpeg مُضمَّن):**
 
 ```bash
 docker compose up -d
@@ -97,10 +118,11 @@ python -m bot
 | `MAX_USER_DOWNLOADS` | `1` | التحميلات المتوازية لكل مستخدم |
 | `COOLDOWN_SECONDS` | `3` | المهلة بين طلبين لنفس المستخدم |
 | `MAX_DURATION_SECONDS` | `10800` | أقصى مدة فيديو (٣ ساعات) |
+| `MAX_DOWNLOAD_ATTEMPTS` | `4` | عدد العملاء المختلفين قبل الاستسلام |
 | `DEFAULT_LANGUAGE` | `ar` | `ar` أو `en` |
 | `DEFAULT_QUALITY` | `best` | `best` / `1080` / `720` / `480` / `360` / `audio` |
 | `ASK_QUALITY` | `true` | `false` = تحميل فوري بالجودة الافتراضية |
-| `COOKIES_FILE` | — | ملف كوكيز للمحتوى المحمي |
+| `COOKIES_FILE` | — | اختياري وغير مستحسن؛ البوت لا يحتاجه |
 | `PROXY` | — | بروكسي لتجاوز الحجب الجغرافي |
 
 ---
@@ -127,19 +149,54 @@ TELEGRAM_API_ROOT=http://telegram-bot-api:8081
 
 ---
 
-## 🔒 المحتوى الذي يتطلب تسجيل دخول
+## 🛡 الموثوقية بدون كوكيز
 
-بعض المنصات (إنستغرام خصوصاً) تطلب جلسة مسجّلة. صدّر الكوكيز بصيغة
-Netscape من إضافة متصفح، ثم:
+معظم حالات "الرفض" ليست عن الحساب، بل عن **العميل الذي طلب**. فنفس الرابط
+الذي يُرفض من متصفح عادي ينجح غالباً إذا طُلب كتطبيق تلفاز. البوت يستغل هذا:
+لكل منصّة سلّم محاولات مرتّب، وعند الفشل ينزل للدرجة التالية تلقائياً.
 
-```env
-COOKIES_FILE=cookies.txt
-```
+| المنصّة | ترتيب المحاولات |
+|--------|----------------|
+| يوتيوب | تلفاز → تلفاز مبسّط → Android VR → iOS → Safari بانتحال Chrome |
+| إنستغرام وفيسبوك | انتحال Chrome → انتحال Safari → الافتراضي |
+| تيك توك | الافتراضي → انتحال Chrome → مضيف API بديل |
+| X/تويتر | syndication → graphql بانتحال → الافتراضي |
 
-يمكن للمشرف أيضاً تحديث الملف بإرساله كمستند للبوت مباشرة.
+الانتحال هنا ليس مجرد تغيير `User-Agent`، بل **بصمة TLS كاملة** عبر
+`curl_cffi` — وهو ما يتجاوز معظم الحجب القائم على كشف الأتمتة.
 
-> استخدم حساباً ثانوياً — مشاركة الكوكيز تمنح وصولاً كاملاً للحساب،
-> وبعض المنصات تحظر الحسابات على التحميل الآلي.
+**والأهم: التحديث التلقائي.** حين تغيّر منصّة شيئاً، يصدر إصلاح في `yt-dlp`
+خلال أيام. سكربت النشر يجدول تحديثاً ليلياً — هذا وحده يمنع أغلب الانقطاعات.
+
+### ما لا يمكن حلّه هندسياً
+
+لأكون صريحاً: **لا توجد طريقة مضمونة ١٠٠٪.** المحتوى الخاص فعلاً (حساب
+مُقفل، منشور لمتابعين فقط، فيديو محذوف) لا يمكن تحميله بدون بيانات دخول —
+وهذا ليس قيداً أستطيع هندسته، بل هو الغرض من الخصوصية. البوت يميّز الحالتين:
+يعيد المحاولة عند الحجب، ويتوقف فوراً ويشرح السبب عند الخصوصية الحقيقية.
+
+> الكوكيز ما زالت مدعومة عبر `COOKIES_FILE` لكنها **معطّلة افتراضياً وغير
+> مستحسنة**: تمنح وصولاً كاملاً للحساب، وتنتهي صلاحيتها، وقد تُحظر عليها
+> المنصّة.
+
+---
+
+## 📈 عند الاستخدام الكثيف
+
+ثلاث نقاط تحدّد سلوك البوت تحت الحمل:
+
+1. **إعادة الترميز هي عنق الزجاجة**، وليست الشبكة. ffmpeg يستهلك المعالج
+   بشدة. اجعل `MAX_CONCURRENT_DOWNLOADS` قريباً من عدد أنوية المعالج —
+   ورفعه أكثر من ذلك يُبطئ الجميع بدل أن يُسرّعهم.
+2. **سيرفر Bot API محلي يُلغي الحاجة لإعادة الترميز** أصلاً (حد ٢ غيغابايت
+   بدل ٥٠ ميغابايت). هذا أكبر تحسين ممكن للأداء تحت الحمل، وليس مجرد
+   زيادة في الحد الأقصى.
+3. **عنوان IP واحد لمركز بيانات يُحجب أسرع** من عنوان منزلي. إن بدأت ترى
+   `err_login` بكثرة على يوتيوب تحديداً، فذلك سببه الأرجح — عالجه بـ
+   `PROXY` أو بـ `COOLDOWN_SECONDS` أعلى، لا بالكوكيز.
+
+الذاكرة المؤقتة تساعد كثيراً هنا: الرابط الشائع (فيديو منتشر يرسله عشرة
+أشخاص) يُحمّل مرة واحدة ويُرسل للبقية فوراً عبر `file_id`.
 
 ---
 
@@ -150,19 +207,22 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-١١١ اختباراً، كلها تعمل بدون إنترنت. اختبارات ffmpeg تُتخطّى تلقائياً إن
-لم يكن مثبّتاً.
+١٣٢ اختباراً، كلها تعمل بدون إنترنت — بما فيها اختبارات تُثبت أن سلّم
+إعادة المحاولة يتجاوز الحجب ويتوقف فوراً عند المحتوى الخاص. اختبارات
+ffmpeg تُتخطّى تلقائياً إن لم يكن مثبّتاً.
 
 ---
 
 ## 🗂 بنية المشروع
 
 ```
+deploy.sh              تثبيت كامل على VPS بأمر واحد
 bot/
 ├── __main__.py        نقطة الدخول: python -m bot
 ├── app.py             تجميع التطبيق وتسجيل المعالجات
 ├── config.py          قراءة الإعدادات من البيئة والتحقّق منها
 ├── downloader.py      غلاف yt-dlp: الصيغ، الإلغاء، تصنيف الأخطاء
+├── strategies.py      سلالم إعادة المحاولة التي تُغني عن الكوكيز
 ├── media.py           ffmpeg: الفحص، المصغّرات، MP3، التصغير
 ├── storage.py         SQLite: التفضيلات، ذاكرة file_id، العدّادات
 ├── progress.py        رسالة التقدّم التي تُحدّث نفسها
@@ -199,6 +259,10 @@ quality, get the file back in the chat.
 
 - **1000+ sites** via `yt-dlp`: YouTube, TikTok, Instagram, Facebook,
   X/Twitter, Reddit, Snapchat, Twitch, Vimeo, SoundCloud and more.
+- **No cookies, no login**: when a site refuses, the bot retries as a
+  different client — TV app, then phone app, then a real browser with a
+  full TLS fingerprint.
+- **Nightly yt-dlp updates**, the single biggest factor in staying working.
 - **Quality picker** that only offers what the site actually has.
 - **MP3 extraction** at 192 kbps.
 - **Live progress bar** with speed and ETA.
@@ -220,10 +284,21 @@ quality, get the file back in the chat.
    cd jalal
    cp .env.example .env     # then put your token in BOT_TOKEN
    ```
-3. Run it:
+3. Run it — on a VPS, one command does everything:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/lolykapmo-cyber/jalal/claude/epic-euler-mfpvcq/deploy.sh -o deploy.sh
+   less deploy.sh          # read it before running it as root
+   sudo bash deploy.sh
+   ```
+   It creates `/opt/jalal` and a dedicated system user, installs ffmpeg and
+   the dependencies, registers a systemd service that survives reboots, and
+   schedules the nightly yt-dlp update. The token is read from a hidden
+   prompt, so it never reaches your shell history or the process list.
+   Re-running it updates the code and keeps the token.
+
+   Or with Docker, or locally:
    ```bash
    docker compose up -d                    # ffmpeg included
-   # or locally:
    pip install -r requirements.txt && python -m bot
    ```
 
@@ -240,6 +315,9 @@ extraction and shrinking oversized files.
 Every setting is an environment variable, documented inline in
 [`.env.example`](.env.example). Only `BOT_TOKEN` is required.
 
+`MAX_DOWNLOAD_ATTEMPTS` (default 4) controls how many different clients
+the bot tries before giving up.
+
 ## 📦 About the 50 MB limit
 
 The public Bot API caps bot uploads at 50 MB. The bot picks a format that
@@ -248,12 +326,59 @@ too long to shrink without ruining it. To upload up to 2 GB, run a local
 Bot API server (see the commented block in `docker-compose.yml`) and set
 `TELEGRAM_API_ROOT`; the limit then raises itself to 2000 MB.
 
-## 🔒 Login-walled content
+## 🛡 Reliability without cookies
 
-Export cookies in Netscape format and point `COOKIES_FILE` at the file; an
-admin can also refresh it by sending it to the bot as a document. Use a
-throwaway account — cookies grant full account access, and some platforms
-ban accounts for automated downloading.
+Most "blocked" failures are not about the account — they are about **which
+client asked**. The same link a browser gets refused for will often serve
+fine to a TV app. The bot leans on that: every platform has an ordered
+ladder of attempts, and a rejection drops it to the next rung automatically.
+
+| Platform | Attempt order |
+|----------|---------------|
+| YouTube | tv → tv_simply → android_vr → ios → web_safari w/ Chrome impersonation |
+| Instagram, Facebook | Chrome impersonation → Safari impersonation → default |
+| TikTok | default → Chrome impersonation → alternate API host |
+| X/Twitter | syndication → graphql w/ impersonation → default |
+
+Impersonation here is not a swapped `User-Agent`: it is a **full TLS
+fingerprint** via `curl_cffi`, which is what gets past most
+automation-detection blocking.
+
+**The bigger lever is the nightly update.** When a platform changes
+something, a `yt-dlp` fix usually lands within days. The deploy script
+schedules a nightly refresh; that alone prevents most outages.
+
+### What engineering cannot fix
+
+To be straight about it: **there is no 100% guaranteed method.** Genuinely
+private content — a locked account, a followers-only post, a deleted video
+— cannot be fetched without credentials, and that is the point of privacy
+rather than a limitation to engineer around. The bot distinguishes the two
+cases: it retries on a block, and stops immediately with an explanation on
+real privacy.
+
+> Cookies are still supported via `COOKIES_FILE`, but they are **off by
+> default and not recommended**: they grant full account access, they
+> expire, and platforms do ban the accounts behind them.
+
+---
+
+## 📈 Under heavy use
+
+Three things decide how the bot behaves at load:
+
+1. **Transcoding is the bottleneck**, not bandwidth. ffmpeg is CPU-bound,
+   so keep `MAX_CONCURRENT_DOWNLOADS` near your core count — pushing it
+   higher makes everyone slower, not faster.
+2. **A local Bot API server removes transcoding entirely** (2 GB instead of
+   50 MB). That is the single largest throughput win available, not merely
+   a bigger size cap.
+3. **One datacenter IP gets blocked faster** than a residential one. Lots of
+   `err_login` on YouTube specifically is usually this — address it with
+   `PROXY` or a higher `COOLDOWN_SECONDS`, not with cookies.
+
+The upload cache helps a lot here: a link ten people send gets downloaded
+once and re-sent to the rest instantly by `file_id`.
 
 ## 🧪 Tests
 
@@ -261,8 +386,9 @@ ban accounts for automated downloading.
 pip install -r requirements-dev.txt && python -m pytest
 ```
 
-111 tests, all offline. The ffmpeg-backed ones skip themselves if ffmpeg
-isn't installed.
+132 tests, all offline — including ones that prove the retry ladder gets
+past a block and stops immediately on private content. The ffmpeg-backed
+tests skip themselves if ffmpeg isn't installed.
 
 ## ⚖️ Responsible use
 

@@ -1,3 +1,7 @@
 python-telegram-bot[rate-limiter]>=21.6,<23
 yt-dlp>=2025.1.15
+# Browser TLS-fingerprint impersonation. This is what lets the bot fetch
+# login-walled-looking pages without any cookies, so it is a hard
+# requirement rather than an optional extra.
+curl_cffi>=0.7
 python-dotenv>=1.0

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
+
+from .strategies import Strategy, is_retryable, ladder_for
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +125,7 @@ class DownloadResult:
     webpage_url: str
     extractor: str
     video_id: str
+    strategy: str = "default"
 
 
 def format_selector(quality: str) -> str:
@@ -358,9 +363,17 @@ def classify_error(message: str, *, hints: Iterable[str] = ()) -> DownloadFailur
 
 
 # --------------------------------------------------------------------------
-# Async entry points. yt-dlp is synchronous, so each call runs in a worker
-# thread; cancellation reaches it through the progress hook.
+# Async entry points.
+#
+# yt-dlp is synchronous, so every call runs in a worker thread; cancellation
+# reaches it through the progress hook. Each call walks the URL's strategy
+# ladder (see strategies.py): if a site rejects one client, the next one is
+# tried, which is what replaces needing login cookies.
 # --------------------------------------------------------------------------
+
+# Bounds the worst case when every rung fails: a blocked link should report
+# back in a reasonable time rather than grinding through every option.
+DEFAULT_MAX_ATTEMPTS = 4
 
 
 def _probe_options(
@@ -401,7 +414,6 @@ def _translate(exc: BaseException, url: str) -> DownloadFailure:
     if isinstance(exc, DownloadFailure):
         return exc
 
-    import yt_dlp  # noqa: F401  (needed for the error classes below)
     from yt_dlp.utils import (
         DownloadError,
         ExtractorError,
@@ -418,24 +430,49 @@ def _translate(exc: BaseException, url: str) -> DownloadFailure:
     return classify_error(str(exc) or exc.__class__.__name__, hints=(url,))
 
 
+def _attempts(url: str, max_attempts: int) -> tuple[Strategy, ...]:
+    ladder = ladder_for(url)
+    return ladder[: max(1, max_attempts)]
+
+
 async def probe_url(
     url: str,
     *,
     cookies_file: Path | None = None,
     proxy: str | None = None,
     max_playlist_items: int = 1,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
-    """Look up metadata without downloading anything."""
-    import asyncio
-
-    options = _probe_options(
+    """Look up metadata without downloading, walking the strategy ladder."""
+    base = _probe_options(
         cookies_file=cookies_file, proxy=proxy, max_playlist_items=max_playlist_items
     )
-    try:
-        info = await asyncio.to_thread(_extract, url, options, download=False)
-    except Exception as exc:  # noqa: BLE001 - every failure becomes a message
-        raise _translate(exc, url) from exc
-    return first_entry(info)
+    attempts = _attempts(url, max_attempts)
+    last: DownloadFailure | None = None
+
+    for index, strategy in enumerate(attempts, start=1):
+        try:
+            info = await asyncio.to_thread(
+                _extract, url, strategy.apply_to(base), download=False
+            )
+        except Exception as exc:  # noqa: BLE001 - every failure becomes a message
+            failure = _translate(exc, url)
+            last = failure
+            if not is_retryable(failure.key) or index == len(attempts):
+                raise failure from exc
+            logger.info(
+                "probe %s/%s via %s failed (%s); trying the next client",
+                index, len(attempts), strategy.label, failure.key,
+            )
+            continue
+
+        entry = first_entry(info)
+        entry["_strategy"] = strategy.label
+        if index > 1:
+            logger.info("probe succeeded via %s on attempt %s", strategy.label, index)
+        return entry
+
+    raise last or DownloadFailure("err_no_formats")
 
 
 async def run_download(
@@ -448,10 +485,9 @@ async def run_download(
     max_playlist_items: int = 1,
     progress_hook: Callable[[dict[str, Any]], None] | None = None,
     cancel_token: CancelToken | None = None,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
 ) -> DownloadResult:
-    """Download `url` into `dest_dir` and describe what landed there."""
-    import asyncio
-
+    """Download `url` into `dest_dir`, retrying with a different client on a block."""
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     def hook(status: dict[str, Any]) -> None:
@@ -465,39 +501,67 @@ async def run_download(
             except Exception:  # noqa: BLE001 - never let the UI kill a download
                 logger.debug("progress hook raised", exc_info=True)
 
-    options = build_options(
-        quality=quality,
-        dest_dir=dest_dir,
-        cookies_file=cookies_file,
-        proxy=proxy,
-        max_playlist_items=max_playlist_items,
-        progress_hook=hook,
-    )
+    attempts = _attempts(url, max_attempts)
+    last: DownloadFailure | None = None
 
-    try:
-        info = await asyncio.to_thread(_extract, url, options, download=True)
-    except DownloadCancelled:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        # A cancel surfaces as yt-dlp's own DownloadError wrapping ours.
-        if cancel_token is not None and cancel_token.cancelled:
-            raise DownloadCancelled from exc
-        raise _translate(exc, url) from exc
+    for index, strategy in enumerate(attempts, start=1):
+        # Each attempt gets its own directory, so a half-written file from a
+        # failed client can never be mistaken for the finished download.
+        attempt_dir = dest_dir / f"try{index}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
 
-    entry = first_entry(info)
-    path = resolve_output(entry, dest_dir)
-    title, uploader, duration = describe(entry)
-    is_audio = quality == "audio"
+        options = strategy.apply_to(
+            build_options(
+                quality=quality,
+                dest_dir=attempt_dir,
+                cookies_file=cookies_file,
+                proxy=proxy,
+                max_playlist_items=max_playlist_items,
+                progress_hook=hook,
+            )
+        )
 
-    return DownloadResult(
-        path=path,
-        title=title,
-        uploader=uploader,
-        duration=duration,
-        width=entry.get("width") if not is_audio else None,
-        height=entry.get("height") if not is_audio else None,
-        is_audio=is_audio,
-        webpage_url=str(entry.get("webpage_url") or url),
-        extractor=str(entry.get("extractor") or entry.get("extractor_key") or "generic"),
-        video_id=str(entry.get("id") or ""),
-    )
+        try:
+            info = await asyncio.to_thread(_extract, url, options, download=True)
+        except DownloadCancelled:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # A cancel surfaces as yt-dlp's own DownloadError wrapping ours.
+            if cancel_token is not None and cancel_token.cancelled:
+                raise DownloadCancelled from exc
+
+            failure = _translate(exc, url)
+            last = failure
+            await asyncio.to_thread(shutil.rmtree, attempt_dir, True)
+
+            if not is_retryable(failure.key) or index == len(attempts):
+                raise failure from exc
+            logger.info(
+                "download %s/%s via %s failed (%s); trying the next client",
+                index, len(attempts), strategy.label, failure.key,
+            )
+            continue
+
+        entry = first_entry(info)
+        path = resolve_output(entry, attempt_dir)
+        title, uploader, duration = describe(entry)
+        is_audio = quality == "audio"
+
+        if index > 1:
+            logger.info("download succeeded via %s on attempt %s", strategy.label, index)
+
+        return DownloadResult(
+            path=path,
+            title=title,
+            uploader=uploader,
+            duration=duration,
+            width=entry.get("width") if not is_audio else None,
+            height=entry.get("height") if not is_audio else None,
+            is_audio=is_audio,
+            webpage_url=str(entry.get("webpage_url") or url),
+            extractor=str(entry.get("extractor") or entry.get("extractor_key") or "generic"),
+            video_id=str(entry.get("id") or ""),
+            strategy=strategy.label,
+        )
+
+    raise last or DownloadFailure("err_no_formats")
