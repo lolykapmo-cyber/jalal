@@ -19,6 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
+SCRIPT_REVISION="2026-10-05.5"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -59,7 +60,7 @@ command -v apt-get >/dev/null || die "This script targets Debian/Ubuntu (apt-get
 
 # shellcheck disable=SC1091
 [[ -r /etc/os-release ]] && . /etc/os-release
-say "Host: ${PRETTY_NAME:-unknown} (${ID:-?} ${VERSION_ID:-?})"
+say "deploy.sh rev $SCRIPT_REVISION on ${PRETTY_NAME:-unknown} (${ID:-?} ${VERSION_ID:-?})"
 
 # ---------------------------------------------------------------- packages
 say "Installing system packages"
@@ -82,6 +83,13 @@ fi
 # ------------------------------------------------------------------- code
 if [[ -d "$INSTALL_DIR/.git" ]]; then
     say "Updating the existing checkout in $INSTALL_DIR"
+    # git refuses to work in a repository owned by another user, and an
+    # earlier revision of this script chowned the checkout to the service
+    # user. The -c safe.directory override below is honoured by current git
+    # but not by the 2.25.1 Ubuntu 20.04 ships, so correct the ownership
+    # itself: root owning the code is the layout we want regardless. The
+    # data directory and .env are given back their owners further down.
+    chown -R root:root "$INSTALL_DIR"
     git_repo remote set-url origin "$REPO_URL"
     git_repo fetch --quiet origin "$BRANCH"
     git_repo checkout --quiet -B "$BRANCH" "origin/$BRANCH"
