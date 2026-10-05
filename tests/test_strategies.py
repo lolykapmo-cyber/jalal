@@ -163,7 +163,9 @@ async def test_probe_reports_the_last_failure_when_every_rung_fails(
     assert len(calls) == 3
 
 
-async def test_max_attempts_caps_the_ladder(three_rungs, monkeypatch):
+async def test_a_low_cap_never_amputates_a_ladder(three_rungs, monkeypatch):
+    """A ladder is an ordered sequence whose later rungs rescue the hardest
+    cases, so a low cap must not quietly disable them."""
     calls = []
     monkeypatch.setattr(
         downloader, "_extract",
@@ -172,7 +174,39 @@ async def test_max_attempts_caps_the_ladder(three_rungs, monkeypatch):
 
     with pytest.raises(DownloadFailure):
         await probe_url("https://youtu.be/x", max_attempts=2)
-    assert len(calls) == 2
+
+    assert len(calls) == 3  # the whole ladder, not the cap
+
+
+async def test_a_generous_cap_still_stops_at_the_ladder(three_rungs, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        downloader, "_extract",
+        _fake_extract([DownloadFailure("err_login")] * 3, calls),
+    )
+
+    with pytest.raises(DownloadFailure):
+        await probe_url("https://youtu.be/x", max_attempts=99)
+    assert len(calls) == 3
+
+
+def test_the_default_cap_covers_every_ladder(monkeypatch):
+    """The default must never be the thing that cuts a platform short."""
+    from bot.downloader import DEFAULT_MAX_ATTEMPTS
+
+    monkeypatch.setattr(strategies, "impersonation_available", lambda: True)
+    for url in ("https://youtu.be/x", "https://www.instagram.com/reel/x/",
+                "https://www.tiktok.com/@a/video/1", "https://x.com/u/status/1",
+                "https://other.example/v"):
+        assert len(ladder_for(url)) <= DEFAULT_MAX_ATTEMPTS, url
+
+
+def test_youtube_keeps_its_impersonation_rungs(monkeypatch):
+    """These are the two that were being dropped by the old cap of 4."""
+    monkeypatch.setattr(strategies, "impersonation_available", lambda: True)
+    labels = [s.label for s in downloader._attempts("https://youtu.be/x", 4)]
+    assert "yt/web_safari+chrome" in labels
+    assert "yt/default" in labels
 
 
 async def test_download_retries_and_records_the_strategy(

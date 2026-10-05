@@ -210,12 +210,14 @@ def first_entry(info: dict[str, Any]) -> dict[str, Any]:
             entries = list(entries)
         entries = [entry for entry in entries if entry]
         if not entries:
+            logger.warning("playlist resolved to no entries")
             raise DownloadFailure("err_no_formats")
         current = entries[0]
         seen += 1
         if seen > 4:  # guard against a pathological nesting
             break
     if not isinstance(current, dict):
+        logger.warning("extractor returned %s, not an entry", type(current).__name__)
         raise DownloadFailure("err_no_formats")
     return current
 
@@ -318,6 +320,13 @@ def resolve_output(info: dict[str, Any], dest_dir: Path) -> Path:
     if found:
         return max(found, key=lambda path: path.stat().st_size)
 
+    # The download reported success but left nothing behind: usually a merge
+    # or post-processing step that failed quietly.
+    logger.error(
+        "no media file in %s after download; directory holds: %s",
+        dest_dir,
+        ", ".join(sorted(p.name for p in dest_dir.glob("*"))) or "nothing",
+    )
     raise DownloadFailure("err_no_formats")
 
 
@@ -371,9 +380,11 @@ def classify_error(message: str, *, hints: Iterable[str] = ()) -> DownloadFailur
 # tried, which is what replaces needing login cookies.
 # --------------------------------------------------------------------------
 
-# Bounds the worst case when every rung fails: a blocked link should report
-# back in a reasonable time rather than grinding through every option.
-DEFAULT_MAX_ATTEMPTS = 4
+# Bounds the worst case when every rung fails. It must not be lower than
+# the longest ladder in strategies.py: truncating one throws away the very
+# rungs that exist for the hardest sites, which is the opposite of what a
+# "give up sooner" setting should do.
+DEFAULT_MAX_ATTEMPTS = 8
 
 
 def _probe_options(
@@ -431,8 +442,22 @@ def _translate(exc: BaseException, url: str) -> DownloadFailure:
 
 
 def _attempts(url: str, max_attempts: int) -> tuple[Strategy, ...]:
+    """The rungs to try, never fewer than the whole ladder for this URL.
+
+    A ladder is an ordered sequence in which the later rungs are the ones
+    that rescue the hardest cases, so a low cap would quietly disable
+    exactly the fallbacks the site needs.
+    """
     ladder = ladder_for(url)
-    return ladder[: max(1, max_attempts)]
+    limit = max(1, max_attempts)
+    if limit < len(ladder):
+        logger.debug(
+            "max_attempts=%s is below the %s-rung ladder for this site; "
+            "using the full ladder",
+            limit, len(ladder),
+        )
+        return ladder
+    return ladder[:limit]
 
 
 async def probe_url(
@@ -460,9 +485,10 @@ async def probe_url(
             last = failure
             if not is_retryable(failure.key) or index == len(attempts):
                 raise failure from exc
-            logger.info(
-                "probe %s/%s via %s failed (%s); trying the next client",
+            logger.warning(
+                "probe %s/%s via %s failed (%s): %s",
                 index, len(attempts), strategy.label, failure.key,
+                clean_error(str(exc), limit=300),
             )
             continue
 
@@ -536,9 +562,10 @@ async def run_download(
 
             if not is_retryable(failure.key) or index == len(attempts):
                 raise failure from exc
-            logger.info(
-                "download %s/%s via %s failed (%s); trying the next client",
+            logger.warning(
+                "download %s/%s via %s failed (%s): %s",
                 index, len(attempts), strategy.label, failure.key,
+                clean_error(str(exc), limit=300),
             )
             continue
 
