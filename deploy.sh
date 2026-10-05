@@ -18,6 +18,12 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/jalal}"
 SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
+
+# yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10 or
+# newer. Ubuntu 20.04 still ships 3.8, where pip silently resolves to a
+# yt-dlp from 2024 that no longer works against current sites.
+MIN_PYTHON_MINOR="${MIN_PYTHON_MINOR:-10}"
+PYTHON_SERIES="${PYTHON_SERIES:-3.11}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
 
 ENV_FILE="$INSTALL_DIR/.env"
@@ -36,8 +42,64 @@ say "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-    python3 python3-venv python3-dev \
-    ffmpeg git ca-certificates build-essential
+    ffmpeg git ca-certificates curl build-essential \
+    software-properties-common
+
+# ------------------------------------------------------------------ python
+# shellcheck disable=SC1091
+[[ -r /etc/os-release ]] && . /etc/os-release
+
+# Print the path of the first interpreter that is new enough, newest first.
+find_python() {
+    local candidate resolved
+    for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+        resolved="$(command -v "$candidate" 2>/dev/null)" || continue
+        if "$resolved" -c \
+            "import sys; sys.exit(0 if sys.version_info[:2] >= (3, $MIN_PYTHON_MINOR) else 1)" \
+            2>/dev/null; then
+            printf '%s\n' "$resolved"
+            return 0
+        fi
+    done
+    return 1
+}
+
+install_python_series() {
+    local series="$1"
+    say "System Python is older than 3.$MIN_PYTHON_MINOR; installing Python $series"
+    if [[ "${ID:-}" == "ubuntu" ]]; then
+        # deadsnakes carries current Python builds for older Ubuntu releases.
+        add-apt-repository -y ppa:deadsnakes/ppa >/dev/null 2>&1 \
+            || warn "Could not add the deadsnakes PPA; trying the distro archive instead."
+        apt-get update -qq
+    fi
+    apt-get install -y -qq --no-install-recommends \
+        "python$series" "python$series-venv" "python$series-dev"
+}
+
+PYTHON_BIN="$(find_python || true)"
+if [[ -z "$PYTHON_BIN" ]]; then
+    install_python_series "$PYTHON_SERIES" || true
+    PYTHON_BIN="$(find_python || true)"
+fi
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    die "Could not find or install Python 3.$MIN_PYTHON_MINOR+.
+   yt-dlp, python-telegram-bot and curl_cffi all require it, and on an older
+   Python pip resolves to a yt-dlp from 2024 that current sites reject.
+   Install a newer Python by hand, then re-run with:
+     sudo PYTHON_SERIES=3.11 bash deploy.sh
+   Or use the Docker route, which bundles its own Python."
+fi
+
+PY_VERSION="$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+say "Using Python $PY_VERSION at $PYTHON_BIN"
+
+# On Debian/Ubuntu, venv ships separately from the interpreter.
+if ! "$PYTHON_BIN" -c 'import venv, ensurepip' 2>/dev/null; then
+    apt-get install -y -qq --no-install-recommends "python$PY_VERSION-venv" \
+        || die "Could not install python$PY_VERSION-venv, which is needed to build the virtualenv."
+fi
 
 # ------------------------------------------------------------------- user
 if id "$SERVICE_USER" &>/dev/null; then
@@ -64,9 +126,21 @@ mkdir -p "$DATA_DIR"
 
 # --------------------------------------------------------------- virtualenv
 say "Installing Python dependencies"
-[[ -x "$VENV_DIR/bin/python" ]] || python3 -m venv "$VENV_DIR"
+
+# A virtualenv left over from an older interpreter cannot be upgraded in
+# place, so replace it rather than failing on the dependency resolve.
+if [[ -x "$VENV_DIR/bin/python" ]] && ! "$VENV_DIR/bin/python" -c \
+    "import sys; sys.exit(0 if sys.version_info[:2] >= (3, $MIN_PYTHON_MINOR) else 1)" \
+    2>/dev/null; then
+    warn "Rebuilding the virtualenv on Python $PY_VERSION"
+    rm -rf "$VENV_DIR"
+fi
+
+[[ -x "$VENV_DIR/bin/python" ]] || "$PYTHON_BIN" -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip wheel
 "$VENV_DIR/bin/pip" install --quiet --upgrade -r "$INSTALL_DIR/requirements.txt"
+
+say "Installed: $("$VENV_DIR/bin/python" -m yt_dlp --version 2>/dev/null || echo 'yt-dlp missing')"
 
 # ------------------------------------------------------------------ token
 if [[ -f "$ENV_FILE" ]] && grep -qE '^BOT_TOKEN=.+' "$ENV_FILE"; then

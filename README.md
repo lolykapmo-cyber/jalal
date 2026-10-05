@@ -76,6 +76,9 @@ docker compose logs -f
 
 **محلياً بـ Python:**
 
+> يتطلب **Python 3.10 أو أحدث**. يوتيوب-dlp وpython-telegram-bot وcurl_cffi
+> كلها أسقطت ما قبلها. سكربت النشر يثبّت نسخة حديثة تلقائياً عند الحاجة.
+
 ```bash
 # ffmpeg مطلوب للدمج والصور المصغّرة واستخراج MP3
 sudo apt install ffmpeg          # أو: brew install ffmpeg
@@ -241,6 +244,36 @@ bot/
 
 ---
 
+## 🔧 حل المشكلات
+
+**`No matching distribution found for yt-dlp>=2025.1.15`**
+
+Python لديك قديم (أقل من 3.10). يحدث هذا على Ubuntu 20.04 الذي يأتي بـ 3.8.
+pip يتراجع صامتاً لآخر نسخة تدعم 3.8 — وهي من 2024 ولم تعد تعمل مع المواقع
+الحالية. أعد تشغيل السكربت وسيثبّت Python 3.11 تلقائياً:
+
+```bash
+sudo bash deploy.sh
+```
+
+ولتحديد نسخة أخرى: `sudo PYTHON_SERIES=3.12 bash deploy.sh`
+
+**البوت لا يرد على تليكرام**
+
+```bash
+systemctl status jalal-bot
+journalctl -u jalal-bot -n 50 --no-pager
+```
+
+السبب الأشيع توكن خاطئ في `/opt/jalal/.env`.
+
+**`err_login` كثيراً على يوتيوب**
+
+عنوان IP الخاص بمركز البيانات محجوب. عالجه بـ `PROXY` أو `COOLDOWN_SECONDS`
+أعلى — لا بالكوكيز.
+
+---
+
 ## ⚖️ الاستخدام المسؤول
 
 هذه الأداة للمحتوى الذي تملك حق تحميله: أعمالك، أو المحتوى المرخّص، أو
@@ -302,8 +335,11 @@ quality, get the file back in the chat.
    pip install -r requirements.txt && python -m bot
    ```
 
-Running locally needs `ffmpeg` on `PATH` for merging, thumbnails, MP3
-extraction and shrinking oversized files.
+Running locally needs **Python 3.10+** (yt-dlp, python-telegram-bot and
+curl_cffi all dropped anything older) and `ffmpeg` on `PATH` for merging,
+thumbnails, MP3 extraction and shrinking oversized files. `deploy.sh`
+installs a newer Python itself when the system one is too old — which it is
+on Ubuntu 20.04, where `python3` is still 3.8.
 
 ## 📋 Commands
 
@@ -389,6 +425,22 @@ pip install -r requirements-dev.txt && python -m pytest
 132 tests, all offline — including ones that prove the retry ladder gets
 past a block and stops immediately on private content. The ffmpeg-backed
 tests skip themselves if ffmpeg isn't installed.
+
+## 🔧 Troubleshooting
+
+**`No matching distribution found for yt-dlp>=2025.1.15`** — your Python is
+older than 3.10 (Ubuntu 20.04 ships 3.8). pip quietly falls back to the last
+release that supported it, from 2024, which current sites reject. Re-run
+`sudo bash deploy.sh`; it installs Python 3.11. Pick another series with
+`sudo PYTHON_SERIES=3.12 bash deploy.sh`.
+
+**The bot doesn't answer** — check `systemctl status jalal-bot` and
+`journalctl -u jalal-bot -n 50`. Usually a wrong token in `/opt/jalal/.env`.
+
+**Frequent `err_login` on YouTube** — your datacenter IP is blocked. Use
+`PROXY` or a higher `COOLDOWN_SECONDS`, not cookies.
+
+---
 
 ## ⚖️ Responsible use
 
