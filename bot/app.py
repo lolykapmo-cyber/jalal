@@ -95,6 +95,7 @@ def _register(application: Application) -> None:
     application.add_handler(CommandHandler("lang", commands.lang_command))
     application.add_handler(CommandHandler("quality", commands.quality_command))
     application.add_handler(CommandHandler("stats", commands.stats_command))
+    application.add_handler(CommandHandler("health", commands.health_command))
     application.add_handler(CommandHandler("cancel", download.cancel_command))
 
     application.add_handler(

@@ -19,7 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.10"
+SCRIPT_REVISION="2026-10-05.11"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -397,9 +397,44 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
+# ------------------------------------------------------- hourly self-test
+# A site changing what it demands leaves the bot running while every
+# download fails. Without this, nobody notices until a user complains.
+say "Scheduling the hourly self-test"
+cat > "/etc/systemd/system/$SERVICE_NAME-selftest.service" <<UNIT
+[Unit]
+Description=Check that downloading still works, and repair it if not
+After=network-online.target $SERVICE_NAME.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=$ENV_FILE
+Environment=WORK_DIR=$DOWNLOAD_DIR
+Environment=DATABASE_PATH=$DATA_DIR/bot.sqlite3
+# Runs as root because repairing means pip, docker and systemctl.
+ExecStart=$VENV_DIR/bin/python -m bot.selftest
+TimeoutStartSec=1800
+UNIT
+
+cat > "/etc/systemd/system/$SERVICE_NAME-selftest.timer" <<UNIT
+[Unit]
+Description=Hourly download self-test
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 say "Starting services"
 systemctl daemon-reload
 systemctl enable --quiet --now "$SERVICE_NAME-update.timer"
+systemctl enable --quiet --now "$SERVICE_NAME-selftest.timer"
 systemctl enable --quiet "$SERVICE_NAME.service"
 systemctl restart "$SERVICE_NAME.service"
 
@@ -419,6 +454,7 @@ cat <<INFO
   Settings       $ENV_FILE
   Python         $PY_VERSION
   yt-dlp         $YTDLP_VERSION
+  Self-test      systemctl start $SERVICE_NAME-selftest   (runs hourly)
   Live logs      journalctl -u $SERVICE_NAME -f
   Restart        systemctl restart $SERVICE_NAME
   Stop           systemctl stop $SERVICE_NAME

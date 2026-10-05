@@ -129,6 +129,40 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/health - download a known video right now and report what happened."""
+    prefs = await guard(update, context)
+    if prefs is None:
+        return
+
+    svc = services.of(context)
+    message = update.effective_message
+    if not svc.settings.is_admin(prefs.user_id):
+        await message.reply_text(
+            t(prefs.language, "admin_only"), parse_mode=ParseMode.HTML
+        )
+        return
+
+    notice = await message.reply_text("🔍 ...")
+
+    async def run() -> None:
+        from ..selftest import run_checks
+
+        try:
+            results = await run_checks(svc.settings)
+        except Exception as exc:  # noqa: BLE001 - the report is the product
+            await notice.edit_text(f"⚠️ {type(exc).__name__}: {exc}")
+            return
+
+        head = "✅" if all(r.ok for r in results) else "⚠️"
+        body = "\n\n".join(r.summary for r in results)
+        await notice.edit_text(f"{head}\n\n{body}"[:4000],
+                               disable_web_page_preview=True)
+
+    # Downloading takes a while; do not hold the handler open for it.
+    context.application.create_task(run())
+
+
 # ---- settings callbacks ----------------------------------------------
 
 

@@ -14,6 +14,8 @@
 - **بدون كوكيز ولا تسجيل دخول**: عند الرفض، يعيد البوت المحاولة منتحلاً
   عميلاً مختلفاً — تطبيق تلفاز، ثم هاتف، ثم متصفح حقيقي ببصمة TLS كاملة.
 - **تحديث تلقائي لـ yt-dlp** كل ليلة، وهو أهم عامل في استمرار العمل.
+- **فحص ذاتي كل ساعة** يُنزّل فيديو معروفاً فعلياً، ويُصلح نفسه عند الفشل،
+  ولا ينبّهك إلا إذا عجز.
 - **اختيار الجودة** بأزرار تفاعلية — ولا يُعرض إلا ما يوفّره الموقع فعلاً.
 - **استخراج الصوت** بصيغة MP3 بجودة 192kbps.
 - **شريط تقدّم مباشر** يُحدَّث أثناء التحميل، مع السرعة والوقت المتبقي.
@@ -107,6 +109,7 @@ python -m bot
 | `/quality` | تعيين الجودة الافتراضية |
 | `/lang` | التبديل بين العربية والإنجليزية |
 | `/cancel` | إلغاء التحميل الجاري |
+| `/health` | فحص فوري للتحميل (للمشرفين) |
 | `/stats` | إحصائيات الاستخدام (للمشرفين) |
 
 ---
@@ -256,6 +259,44 @@ REQUIRED_CHANNELS=@nextgenshop1,@Nexus_tv_1
 
 ---
 
+## 🩺 ألا يتوقف مستقبلاً
+
+لا توجد طريقة تضمن ذلك — المنصّات تتغيّر. لكن الفارق العملي ليس بين «يُكسر»
+و«لا يُكسر»، بل بين أن يبقى مكسوراً أياماً حتى يشتكي المستخدمون، وأن يُصلح
+نفسه خلال ساعة.
+
+كل ساعة، يُشغّل السيرفر فحصاً يُنزّل فيديو اختبار معروفاً **تنزيلاً حقيقياً**،
+ثم يتحقّق من أن الملف سليم، ومن أن سيرفر Bot API يستطيع قراءته فعلاً (وهذا
+الفحص الأخير يلتقط صنف الخلل الذي كلّفنا يوماً كاملاً).
+
+عند الفشل، يُجرّب بنفسه ما نجح سابقاً:
+
+1. تحديث `yt-dlp` وإضافة PO Token لأحدث بناء تطويري
+2. إعادة تشغيل مُولِّد PO Token
+3. إعادة تشغيل البوت
+
+ثم يُعيد الفحص. فإن نجح، تصلك رسالة أن عطلاً حدث وأُصلح تلقائياً. وإن فشل،
+تصلك رسالة بالخطأ الحرفي وبما جُرّب — فتعرف خلال ساعة لا خلال أيام.
+
+وللفحص الفوري في أي وقت: أرسل **`/health`** للبوت (للمشرفين).
+
+```bash
+systemctl start jalal-bot-selftest        # تشغيل فوري
+journalctl -u jalal-bot-selftest -n 50    # نتيجة آخر فحص
+systemctl list-timers | grep jalal        # مواعيد المؤقّتات
+```
+
+ولتغيير روابط الاختبار، في `.env`:
+
+```env
+SELFTEST_URLS=https://youtu.be/...,https://vt.tiktok.com/...
+```
+
+> الافتراضي هو فيديو الاختبار الخاص بمشروع `yt-dlp` نفسه — موجود منذ ٢٠١٢
+> ويختبر المشروع نفسه عليه، فهو أثبت من أي مقطع رائج اليوم.
+
+---
+
 ## 📈 عند الاستخدام الكثيف
 
 ثلاث نقاط تحدّد سلوك البوت تحت الحمل:
@@ -310,6 +351,7 @@ bot/
 ├── strategies.py      سلالم إعادة المحاولة التي تُغني عن الكوكيز
 ├── membership.py      بوابة الاشتراك الإجباري
 ├── inflight.py        توحيد التحميلات المتزامنة لنفس الرابط
+├── selftest.py        الفحص الساعي، والإصلاح الذاتي، والتنبيه
 setup-local-api.sh     رفع الحد إلى ٢ غيغابايت بأمر واحد
 setup-potoken.sh       مُولِّد PO Token الذي يطلبه يوتيوب
 ├── media.py           ffmpeg: الفحص، المصغّرات، MP3، التصغير
@@ -393,6 +435,8 @@ quality, get the file back in the chat.
   different client — TV app, then phone app, then a real browser with a
   full TLS fingerprint.
 - **Nightly yt-dlp updates**, the single biggest factor in staying working.
+- **An hourly self-test** that really downloads a known video, repairs the
+  bot when it fails, and only alerts you if it could not.
 - **Quality picker** that only offers what the site actually has.
 - **MP3 extraction** at 192 kbps.
 - **Live progress bar** with speed and ETA.
@@ -446,7 +490,7 @@ on Ubuntu 20.04, where `python3` is still 3.8.
 ## 📋 Commands
 
 `/start` · `/help` · `/settings` · `/quality` · `/lang` · `/cancel` ·
-`/stats` (admins)
+`/stats` and `/health` (admins)
 
 ## ⚙️ Configuration
 
@@ -548,6 +592,33 @@ blocked on their very next message, rather than waiting for a cache to
 expire. `MEMBERSHIP_CACHE_SECONDS` (two minutes) is only a backstop for an
 update missed across a restart, and a failure is never cached, so the verify
 button reacts instantly.
+
+---
+
+## 🩺 Not breaking later
+
+Nothing can guarantee that; the platforms change. What is achievable is the
+difference between staying broken for days until users complain, and
+repairing itself within the hour.
+
+Every hour the server really downloads a known test video, checks the file
+is sound, and — in local mode — that the Bot API server can actually read
+it, which is the class of bug that cost a day to find. On failure it tries
+what has worked before: update yt-dlp and the PO token plugin to the newest
+pre-release, restart the provider, restart the bot. Then it checks again. If
+that fixed it you get a message saying so; if not, you get the extractor's
+own words and what was tried.
+
+`/health` runs the same check on demand, for admins.
+
+```bash
+systemctl start jalal-bot-selftest
+journalctl -u jalal-bot-selftest -n 50
+```
+
+Set `SELFTEST_URLS` in `.env` to check your own links. The default is
+yt-dlp's own test video, up since 2012 and what the project tests itself
+against, which outlives whatever clip is popular this month.
 
 ---
 
