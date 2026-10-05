@@ -19,7 +19,7 @@ SERVICE_USER="${SERVICE_USER:-jalalbot}"
 SERVICE_NAME="${SERVICE_NAME:-jalal-bot}"
 REPO_URL="${REPO_URL:-https://github.com/lolykapmo-cyber/jalal.git}"
 BRANCH="${BRANCH:-claude/epic-euler-mfpvcq}"
-SCRIPT_REVISION="2026-10-05.9"
+SCRIPT_REVISION="2026-10-05.10"
 
 # yt-dlp, python-telegram-bot and curl_cffi all require Python 3.10+.
 # Ubuntu 20.04 still ships 3.8, where pip quietly resolves to a yt-dlp from
@@ -299,7 +299,11 @@ chmod -R u=rwX,g=rX,o= "$INSTALL_DIR"
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 chown "$SERVICE_USER":"$SERVICE_USER" "$DOWNLOAD_DIR"
-chmod 750 "$DOWNLOAD_DIR"
+# 755, not 750: a local Bot API server reads the finished file off disk and
+# runs as its own user, in a container. At 750 it cannot even traverse here
+# and reports "Can't get stat about the file" for every upload. These are
+# transient downloads, not secrets; the token and database stay private.
+chmod 755 "$DOWNLOAD_DIR"
 
 # The token: readable by the service, invisible to every other account.
 chown root:"$SERVICE_USER" "$ENV_FILE"

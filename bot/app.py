@@ -165,6 +165,38 @@ def _require_writable(path: Path, label: str) -> None:
         )
 
 
+def _ensure_api_server_can_read(work_dir: Path) -> None:
+    """Make the download directory traversable by the local Bot API server.
+
+    It reads finished files off disk as its own user, so a directory only
+    the bot can enter makes every upload fail with "Can\'t get stat about
+    the file". Repaired here rather than trusted to a deploy script, since
+    the bot is what breaks when it is wrong.
+    """
+    try:
+        mode = work_dir.stat().st_mode & 0o777
+    except OSError as exc:
+        logger.warning("could not read the mode of %s: %s", work_dir, exc)
+        return
+
+    wanted = mode | 0o055  # others may enter and read
+    if wanted == mode:
+        return
+    try:
+        work_dir.chmod(wanted)
+        logger.info(
+            "widened %s from %o to %o so the local Bot API server can read it",
+            work_dir, mode, wanted,
+        )
+    except OSError as exc:
+        logger.error(
+            "%s is %o and could not be widened (%s). With a local Bot API "
+            "server every upload will fail with \'Can\'t get stat about the "
+            "file\'. Fix with: chmod 755 %s",
+            work_dir, mode, exc, work_dir,
+        )
+
+
 def _sweep_stale_jobs(work_dir: Path) -> int:
     """Delete job directories left behind by an unclean shutdown."""
     removed = 0
@@ -187,6 +219,9 @@ async def _post_init(application: Application) -> None:
 
     # Nothing is running yet, so every job directory here is debris from a
     # kill -9 or a power cut. Left alone it would fill the disk over time.
+    if settings.local_mode:
+        _ensure_api_server_can_read(settings.work_dir)
+
     swept = _sweep_stale_jobs(settings.work_dir)
     if swept:
         logger.info("removed %s leftover download director%s",

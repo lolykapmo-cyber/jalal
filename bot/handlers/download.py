@@ -446,7 +446,7 @@ async def _run_job(
 
                 sent = await _upload(
                     context, chat_id, url, result, payload, language,
-                    svc.settings.local_mode,
+                    svc.settings.local_mode, svc.settings.work_dir,
                 )
 
         shared_result = await _finish(
@@ -627,6 +627,30 @@ def _caption(language: str, url: str, result: DownloadResult) -> str:
     )[:CAPTION_LIMIT]
 
 
+def _open_up_to(path: Path, root: Path) -> None:
+    """Let the local Bot API server read `path`, which it does as its own user.
+
+    Walks from the file up to the download root, making each directory
+    traversable. A default umask already produces this, but a tightened one
+    would otherwise turn every upload into "Can\'t get stat about the file",
+    and that error names nothing that would lead anyone here.
+    """
+    try:
+        path.chmod(path.stat().st_mode & 0o777 | 0o044)
+    except OSError as exc:
+        logger.debug("could not widen %s: %s", path, exc)
+
+    current = path.parent
+    for _ in range(8):  # the job tree is two deep; the bound is a guard
+        try:
+            current.chmod(current.stat().st_mode & 0o777 | 0o055)
+        except OSError as exc:
+            logger.debug("could not widen %s: %s", current, exc)
+        if current == root or current.parent == current:
+            return
+        current = current.parent
+
+
 def _rename_for_telegram(path: Path, title: str, is_audio: bool) -> Path:
     """Give the file the name the recipient should see.
 
@@ -654,6 +678,7 @@ async def _upload(
     payload: UploadPayload,
     language: str,
     local_mode: bool,
+    work_dir: Path,
 ) -> Message:
     """Send the finished file, giving it a readable filename.
 
@@ -671,6 +696,9 @@ async def _upload(
 
     if local_mode:
         source = _rename_for_telegram(payload.path, result.title, payload.is_audio)
+        _open_up_to(source, work_dir)
+        if payload.thumbnail is not None:
+            _open_up_to(payload.thumbnail, work_dir)
         if payload.is_audio:
             return await context.bot.send_audio(
                 chat_id,
