@@ -217,3 +217,17 @@ def test_glob_escape_protects_literal_brackets(tmp_path):
     (tmp_path / "clip [HD].mp4").write_bytes(b"x" * 10)
     info = {"requested_downloads": [{"filepath": str(tmp_path / "clip [HD].webm")}]}
     assert resolve_output(info, tmp_path).name == "clip [HD].mp4"
+
+
+@pytest.mark.parametrize("message,expected", [
+    # Both phrasings are real. Matching only the first sent a deleted video
+    # to err_generic, which made the self-test call it an outage.
+    ("Video unavailable", "err_unavailable"),
+    ("BaW_jenozKc: This video is unavailable", "err_unavailable"),
+    ("This content is unavailable", "err_unavailable"),
+    # And the broader phrase must not swallow a transient server error.
+    ("HTTP Error 503: Service Unavailable", "err_network"),
+    ("Requested format is not available", "err_no_formats"),
+])
+def test_unavailable_phrasings(message, expected):
+    assert classify_error(message).key == expected

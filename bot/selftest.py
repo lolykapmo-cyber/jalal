@@ -34,6 +34,14 @@ DEFAULT_TEST_URLS = ("https://www.youtube.com/watch?v=BaW_jenozKc",)
 # A canary only has to prove the pipeline works, not that it is fast.
 CHECK_QUALITY = "360"
 
+# Failures that describe the video rather than the bot. A canary that was
+# deleted, made private or geo-blocked says nothing about whether the bot
+# can still download, and treating it as an outage would mean repairing a
+# healthy bot every hour and crying wolf while doing it.
+CONTENT_FAILURES = frozenset(
+    {"err_unavailable", "err_private", "err_geo", "err_live", "err_too_long"}
+)
+
 
 @dataclass(frozen=True)
 class CheckResult:
@@ -41,10 +49,19 @@ class CheckResult:
     ok: bool
     detail: str
     strategy: str = ""
+    failure_key: str = ""
+
+    @property
+    def canary_is_gone(self) -> bool:
+        """The link itself died, which is not an outage of the bot."""
+        return not self.ok and self.failure_key in CONTENT_FAILURES
 
     @property
     def summary(self) -> str:
-        mark = "ok" if self.ok else "FAILED"
+        if self.canary_is_gone:
+            mark = "canary gone"
+        else:
+            mark = "ok" if self.ok else "FAILED"
         via = f" via {self.strategy}" if self.strategy else ""
         return f"{mark}{via}: {self.url}\n    {self.detail}"
 
@@ -70,7 +87,8 @@ async def check_one(url: str, settings: Settings, work_root: Path) -> CheckResul
             max_attempts=settings.max_attempts,
         )
     except DownloadFailure as failure:
-        return CheckResult(url, False, f"{failure.key} {failure.params or ''}".strip())
+        detail = f"{failure.key} {failure.params or ''}".strip()
+        return CheckResult(url, False, detail, failure_key=failure.key)
     except Exception as exc:  # noqa: BLE001 - the report is the product
         return CheckResult(url, False, f"{type(exc).__name__}: {exc}")
 
@@ -198,6 +216,18 @@ async def notify_admins(settings: Settings, text: str) -> None:
                 logger.error("could not alert admin %s: %s", admin, exc)
 
 
+def _canary_report(results: list[CheckResult]) -> str:
+    return "\n".join([
+        "ℹ️ The self-test links are gone, not the bot",
+        "",
+        *(r.summary for r in results),
+        "",
+        "Nothing was repaired: a deleted or blocked video says nothing about",
+        "whether downloading works. Point SELFTEST_URLS in .env at links you",
+        "actually care about, then: systemctl restart jalal-bot",
+    ])
+
+
 def _report(results: list[CheckResult], steps: list[str] | None = None) -> str:
     lines = ["⚠️ Self-test failed", ""]
     lines += [r.summary for r in results]
@@ -230,6 +260,15 @@ async def main_async(argv: list[str] | None = None) -> int:
         (logger.info if result.ok else logger.error)("%s", result.summary)
 
     if all(r.ok for r in results):
+        return 0
+
+    # A dead canary is not an outage. Repairing on one would mean reinstalling
+    # yt-dlp and bouncing the service hourly over a video somebody deleted.
+    failures = [r for r in results if not r.ok]
+    if all(r.canary_is_gone for r in failures):
+        logger.warning("every failing link is simply unavailable; not an outage")
+        if not args.quiet:
+            await notify_admins(settings, _canary_report(failures))
         return 0
 
     if args.no_repair:

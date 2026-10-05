@@ -190,3 +190,48 @@ async def test_an_unreachable_site_fails_without_raising(tmp_path):
     )
     assert not result.ok
     assert result.detail
+
+
+# ---- a dead link is not an outage ------------------------------------
+
+
+@pytest.mark.parametrize("key", [
+    "err_unavailable", "err_private", "err_geo", "err_live", "err_too_long",
+])
+def test_a_failure_about_the_video_is_not_an_outage(key):
+    """These describe the link, not the bot. Repairing on them would mean
+    reinstalling yt-dlp hourly over a video somebody deleted."""
+    assert CheckResult("https://a.co/1", False, key, failure_key=key).canary_is_gone
+
+
+@pytest.mark.parametrize("key", [
+    "err_no_formats", "err_login", "err_network", "err_generic",
+])
+def test_a_failure_about_the_bot_still_counts(key):
+    assert not CheckResult("https://a.co/1", False, key, failure_key=key).canary_is_gone
+
+
+def test_a_passing_check_is_never_a_dead_canary():
+    assert not CheckResult("https://a.co/1", True, "4 MB").canary_is_gone
+
+
+def test_the_dead_canary_report_says_what_to_change():
+    from bot.selftest import _canary_report
+
+    text = _canary_report([
+        CheckResult("https://youtu.be/x", False, "err_unavailable",
+                    failure_key="err_unavailable")
+    ])
+    assert "not the bot" in text
+    assert "SELFTEST_URLS" in text
+    # It must not read like an outage, or it trains the reader to ignore it.
+    assert "Self-test failed" not in text
+
+
+def test_a_dead_canary_summary_is_labelled_distinctly():
+    gone = CheckResult("https://a.co/1", False, "err_unavailable",
+                       failure_key="err_unavailable")
+    assert gone.summary.startswith("canary gone")
+    broken = CheckResult("https://a.co/1", False, "err_no_formats",
+                         failure_key="err_no_formats")
+    assert broken.summary.startswith("FAILED")

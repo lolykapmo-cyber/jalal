@@ -57,7 +57,11 @@ _ERROR_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "this live event",
     )),
     ("err_unavailable", (
-        "video unavailable", "no longer available", "has been removed",
+        # "video unavailable" and "video is unavailable" are both real
+        # phrasings; matching only the first sent the second to err_generic.
+        # "is unavailable" deliberately does not match "Service Unavailable".
+        "video unavailable", "is unavailable", "content is unavailable",
+        "no longer available", "has been removed",
         "has been deleted", "does not exist", "not found", "404",
         "removed by the uploader", "terminated", "unable to find",
     )),
