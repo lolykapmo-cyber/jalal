@@ -1,0 +1,228 @@
+{
+ "1": [
+  {
+   "shapes": [
+    "hero3d"
+   ],
+   "effect": "zoom",
+   "dur": 900,
+   "delay": 0
+  },
+  {
+   "shapes": [
+    "ph:100"
+   ],
+   "effect": "fade",
+   "dur": 500,
+   "delay": 350
+  },
+  {
+   "shapes": [
+    "ph:101"
+   ],
+   "effect": "floatUp",
+   "dur": 700,
+   "delay": 650
+  },
+  {
+   "shapes": [
+    "ph:102"
+   ],
+   "effect": "fade",
+   "dur": 600,
+   "delay": 1250
+  }
+ ],
+ "8": [
+  {
+   "shapes": [
+    "mem3d"
+   ],
+   "effect": "fade",
+   "dur": 800,
+   "delay": 0
+  },
+  {
+   "shapes": [
+    "un_bg",
+    "un_ic",
+    "un_ici",
+    "un_h",
+    "un_t"
+   ],
+   "effect": "floatUp",
+   "dur": 600,
+   "delay": 450
+  },
+  {
+   "shapes": [
+    "io_bg",
+    "io_ic",
+    "io_ici",
+    "io_h",
+    "io_t"
+   ],
+   "effect": "floatUp",
+   "dur": 600,
+   "delay": 850
+  },
+  {
+   "shapes": [
+    "mem_cap"
+   ],
+   "effect": "fade",
+   "dur": 500,
+   "delay": 1300
+  }
+ ],
+ "13": [
+  {
+   "shapes": [
+    "bile_bg",
+    "bile_ic",
+    "bile_ici",
+    "bile_h",
+    "bile_b"
+   ],
+   "effect": "floatUp",
+   "dur": 600,
+   "delay": 0
+  },
+  {
+   "shapes": [
+    "mic3d"
+   ],
+   "effect": "zoom",
+   "dur": 800,
+   "delay": 400
+  },
+  {
+   "shapes": [
+    "intes_bg",
+    "intes_ic",
+    "intes_ici",
+    "intes_h",
+    "intes_b"
+   ],
+   "effect": "floatUp",
+   "dur": 600,
+   "delay": 900
+  }
+ ],
+ "15": [
+  {
+   "shapes": [
+    "ent3d"
+   ],
+   "effect": "fade",
+   "dur": 800,
+   "delay": 0
+  },
+  {
+   "shapes": [
+    "k0_bg",
+    "k0_ic",
+    "k0_ici",
+    "k0_t"
+   ],
+   "effect": "floatUp",
+   "dur": 500,
+   "delay": 500
+  },
+  {
+   "shapes": [
+    "k1_bg",
+    "k1_ic",
+    "k1_ici",
+    "k1_t",
+    "k0_ar"
+   ],
+   "effect": "floatUp",
+   "dur": 500,
+   "delay": 950
+  },
+  {
+   "shapes": [
+    "k2_bg",
+    "k2_ic",
+    "k2_ici",
+    "k2_t",
+    "k1_ar"
+   ],
+   "effect": "floatUp",
+   "dur": 500,
+   "delay": 1400
+  }
+ ],
+ "16": [
+  {
+   "shapes": [
+    "che3d"
+   ],
+   "effect": "zoom",
+   "dur": 800,
+   "delay": 0
+  },
+  {
+   "shapes": [
+    "surf_bg",
+    "surf_ic",
+    "surf_ici",
+    "surf_t"
+   ],
+   "effect": "floatUp",
+   "dur": 600,
+   "delay": 500
+  }
+ ],
+ "19": [
+  {
+   "shapes": [
+    "tk0_bg",
+    "tk0_ic",
+    "tk0_ici",
+    "tk0_t",
+    "tk0_s"
+   ],
+   "effect": "floatUp",
+   "dur": 550,
+   "delay": 0
+  },
+  {
+   "shapes": [
+    "tk1_bg",
+    "tk1_ic",
+    "tk1_ici",
+    "tk1_t",
+    "tk1_s"
+   ],
+   "effect": "floatUp",
+   "dur": 550,
+   "delay": 400
+  },
+  {
+   "shapes": [
+    "tk2_bg",
+    "tk2_ic",
+    "tk2_ici",
+    "tk2_t",
+    "tk2_s"
+   ],
+   "effect": "floatUp",
+   "dur": 550,
+   "delay": 800
+  },
+  {
+   "shapes": [
+    "tk3_bg",
+    "tk3_ic",
+    "tk3_ici",
+    "tk3_t",
+    "tk3_s"
+   ],
+   "effect": "floatUp",
+   "dur": 550,
+   "delay": 1200
+  }
+ ]
+}

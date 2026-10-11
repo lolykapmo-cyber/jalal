@@ -3,6 +3,7 @@ const path = require('path');
 const { applyTheme } = require('/root/.claude/skills/synced/bdef7cdd-414e-425f-91d9-5ca8d0432a0c_66163980-dc2d-4b5a-b667-8924e89efa70/pptx/scripts/apply_theme.js');
 
 const IMG = n => path.join(__dirname, 'img', n + '.png');
+const GIF = n => path.join(__dirname, 'img', n + '.gif');
 const OUT = path.join(__dirname, 'GI-pH-and-Secretions-in-Drug-Absorption.pptx');
 
 const THEME = {
@@ -40,8 +41,8 @@ pres.defineSlideMaster({
   objects: [
     { placeholder: { options: { name: 'kicker', type: 'body', x: M, y: 1.42, w: 8.2, h: 0.4,
         fontSize: 15, bold: true, charSpacing: 3, color: C.accent2, valign: 'middle' }, text: ' ' } },
-    { placeholder: { options: { name: 'title', type: 'title', x: M, y: 1.92, w: 8.4, h: 2.5,
-        fontSize: 40, bold: true, color: C.background1, align: 'left', valign: 'top',
+    { placeholder: { options: { name: 'title', type: 'title', x: M, y: 1.92, w: 7.75, h: 2.5,
+        fontSize: 38, bold: true, color: C.background1, align: 'left', valign: 'top',
         lineSpacingMultiple: 1.06 }, text: ' ' } },
     { placeholder: { options: { name: 'body', type: 'body', x: M, y: 4.86, w: 7.2, h: 1.9,
         fontSize: 16, color: C.accent2, valign: 'top' }, text: ' ' } },
@@ -94,16 +95,18 @@ function card(s, o) {
     fill: o.fill || { color: C.background1 },
     line: o.line === null ? { type: 'none' } : (o.line || { color: C.accent2, width: 1 }),
     shadow: o.flat ? undefined : shadow(),
-    objectName: o.name,
+    objectName: o.name || (o.tag && o.tag + '_bg'),
   });
 }
 
 function iconCircle(s, o) {
   const d = o.d || 0.62;
   s.addShape(pres.ShapeType.ellipse, { x: o.x, y: o.y, w: d, h: d,
-    fill: { color: o.color || C.accent1 }, line: { type: 'none' }, objectName: o.name });
+    fill: { color: o.color || C.accent1 }, line: { type: 'none' },
+    objectName: o.name || (o.tag && o.tag + '_ic') });
   const i = d * 0.54;
-  s.addImage({ path: IMG('ic_' + o.icon), x: o.x + (d - i) / 2, y: o.y + (d - i) / 2, w: i, h: i });
+  s.addImage({ path: IMG('ic_' + o.icon), x: o.x + (d - i) / 2, y: o.y + (d - i) / 2,
+    w: i, h: i, objectName: o.tag && o.tag + '_ici' });
 }
 
 function bullets(s, items, o) {
@@ -112,14 +115,14 @@ function bullets(s, items, o) {
   })), Object.assign({
     x: o.x, y: o.y, w: o.w, h: o.h, fontSize: o.size || 14.5, color: o.color || C.text2,
     valign: 'top', isTextBox: true, paraSpaceAfter: o.gap === undefined ? 8 : o.gap,
-    lineSpacingMultiple: 1.04, margin: 0,
+    lineSpacingMultiple: 1.04, margin: 0, objectName: o.tag && o.tag + '_b',
   }, o.extra || {}));
 }
 
 function heading(s, text, o) {
   s.addText(text, { x: o.x, y: o.y, w: o.w, h: o.h || 0.36, fontSize: o.size || 19,
     bold: true, color: o.color || C.accent1, valign: 'middle', isTextBox: true, margin: 0,
-    objectName: o.name });
+    objectName: o.name || (o.tag && o.tag + '_h') });
 }
 
 function callout(s, o) {
@@ -141,14 +144,11 @@ function slide(master, section, trans) {
 pres.addSection({ title: 'Opening' });
 {
   const s = slide('COVER', 'Opening', 'fade');
-  s.addShape(pres.ShapeType.ellipse, { x: 8.3, y: -1.5, w: 7.2, h: 7.2,
-    fill: { color: C.accent1, transparency: 72 }, line: { type: 'none' } });
-  s.addShape(pres.ShapeType.ellipse, { x: 10.1, y: 3.1, w: 4.6, h: 4.6,
-    fill: { color: C.accent2, transparency: 84 }, line: { type: 'none' } });
-  s.addImage({ path: IMG('gi_mark'), x: 9.05, y: 1.18, w: 3.4, h: 5.06, objectName: '!!mark' });
+  s.addImage({ path: GIF('hero_capsule'), x: 8.62, y: 1.72, w: 4.35, h: 3.66,
+    objectName: 'hero3d' });
   s.addText('BIOPHARMACEUTICS  ·  DRUG ABSORPTION', { placeholder: 'kicker' });
   s.addText('Role of Gastrointestinal pH and Secretions in Drug Absorption',
-    { placeholder: 'title', objectName: '!!deckTitle' });
+    { placeholder: 'title' });
   s.addText([
     { text: 'Presented by:  ', options: { color: C.background1, bold: true } },
     { text: '______________________', options: { color: C.accent2, breakLine: true } },
@@ -314,23 +314,27 @@ pres.addSection({ title: 'Ionization' });
 {
   const s = slide('CONTENT', 'Ionization');
   s.addText('Ionized vs. unionized drug', { placeholder: 'title' });
-  s.addImage({ path: IMG('membrane'), x: M, y: 1.78, w: 7.3, h: 3.82 });
+  s.addImage({ path: GIF('membrane_3d'), x: M, y: 1.78, w: 7.3, h: 3.79,
+    objectName: 'mem3d' });
   s.addText('Only the unionized fraction moves freely through the lipid bilayer',
     { x: M, y: 5.74, w: 7.3, h: 0.4, fontSize: 13, italic: true, color: C.accent6,
-      align: 'center', isTextBox: true, margin: 0 });
+      align: 'center', isTextBox: true, margin: 0, objectName: 'mem_cap' });
   const bx = 8.36, bw = 4.26;
-  card(s, { x: bx, y: 1.78, w: bw, h: 1.86, fill: { color: C.background2 }, line: null, flat: true });
-  iconCircle(s, { x: bx + 0.3, y: 2.02, d: 0.6, icon: 'capsule', color: C.accent1 });
-  heading(s, 'Unionized form', { x: bx + 1.04, y: 2.04, w: bw - 1.3, size: 16 });
+  card(s, { x: bx, y: 1.78, w: bw, h: 1.86, fill: { color: C.background2 }, line: null,
+    flat: true, tag: 'un' });
+  iconCircle(s, { x: bx + 0.3, y: 2.02, d: 0.6, icon: 'capsule', color: C.accent1, tag: 'un' });
+  heading(s, 'Unionized form', { x: bx + 1.04, y: 2.04, w: bw - 1.3, size: 16, tag: 'un' });
   s.addText('Generally crosses lipid membranes more easily.',
     { x: bx + 0.3, y: 2.76, w: bw - 0.6, h: 0.76, fontSize: 14, color: C.text2,
-      isTextBox: true, margin: 0, valign: 'top' });
-  card(s, { x: bx, y: 3.88, w: bw, h: 2.0, fill: { color: C.background2 }, line: null, flat: true });
-  iconCircle(s, { x: bx + 0.3, y: 4.12, d: 0.6, icon: 'charge', color: C.accent4 });
-  heading(s, 'Ionized form', { x: bx + 1.04, y: 4.14, w: bw - 1.3, size: 16, color: C.accent4 });
+      isTextBox: true, margin: 0, valign: 'top', objectName: 'un_t' });
+  card(s, { x: bx, y: 3.88, w: bw, h: 2.0, fill: { color: C.background2 }, line: null,
+    flat: true, tag: 'io' });
+  iconCircle(s, { x: bx + 0.3, y: 4.12, d: 0.6, icon: 'charge', color: C.accent4, tag: 'io' });
+  heading(s, 'Ionized form', { x: bx + 1.04, y: 4.14, w: bw - 1.3, size: 16,
+    color: C.accent4, tag: 'io' });
   s.addText('Generally has lower membrane permeability but may have higher water solubility.',
     { x: bx + 0.3, y: 4.86, w: bw - 0.6, h: 1.1, fontSize: 14, color: C.text2,
-      isTextBox: true, margin: 0, valign: 'top' });
+      isTextBox: true, margin: 0, valign: 'top', objectName: 'io_t' });
   s.addNotes('Lipid membranes favour the neutral species; charge keeps a molecule in the aqueous phase.');
 }
 
@@ -443,23 +447,29 @@ pres.addSection({ title: 'Secretions' });
 {
   const s = slide('CONTENT_TINT', 'Secretions');
   s.addText('Bile salts and intestinal secretions', { placeholder: 'title' });
-  card(s, { x: M, y: 1.6, w: 7.0, h: 2.62, fill: { color: C.background1 }, line: null });
-  iconCircle(s, { x: M + 0.42, y: 1.9, d: 0.66, icon: 'bile', color: C.accent3 });
-  heading(s, 'Bile salts', { x: M + 1.26, y: 1.94, w: 4.4, size: 20, color: C.accent3 });
+  card(s, { x: M, y: 1.6, w: 7.0, h: 2.62, fill: { color: C.background1 }, line: null,
+    tag: 'bile' });
+  iconCircle(s, { x: M + 0.42, y: 1.9, d: 0.66, icon: 'bile', color: C.accent3, tag: 'bile' });
+  heading(s, 'Bile salts', { x: M + 1.26, y: 1.94, w: 4.4, size: 20, color: C.accent3,
+    tag: 'bile' });
   bullets(s, ['Secreted into the small intestine.',
               'Form micelles and improve the solubilization of some poorly water-soluble drugs.'],
-    { x: M + 0.44, y: 2.76, w: 6.1, h: 1.6, size: 14.5, gap: 9 });
-  s.addImage({ path: IMG('micelle'), x: 8.42, y: 1.42, w: 3.45, h: 3.12 });
-  card(s, { x: M, y: 4.76, w: W, h: 1.72, fill: { color: C.background1 }, line: null });
-  iconCircle(s, { x: M + 0.42, y: 5.1, d: 0.66, icon: 'exchange', color: C.accent2 });
-  heading(s, 'Intestinal secretions', { x: M + 1.26, y: 5.14, w: 4.4, size: 20, color: C.accent1 });
+    { x: M + 0.44, y: 2.76, w: 6.1, h: 1.6, size: 14.5, gap: 9, tag: 'bile' });
+  s.addImage({ path: GIF('micelle_3d'), x: 8.56, y: 1.46, w: 3.2, h: 3.2,
+    objectName: 'mic3d' });
+  card(s, { x: M, y: 4.76, w: W, h: 1.72, fill: { color: C.background1 }, line: null,
+    tag: 'intes' });
+  iconCircle(s, { x: M + 0.42, y: 5.1, d: 0.66, icon: 'exchange', color: C.accent2,
+    tag: 'intes' });
+  heading(s, 'Intestinal secretions', { x: M + 1.26, y: 5.14, w: 4.4, size: 20,
+    color: C.accent1, tag: 'intes' });
   s.addText([
     { text: 'Provide water, electrolytes, mucus, and enzymes.',
       options: { bullet: { indent: 16 }, breakLine: true } },
     { text: 'Support drug dissolution and movement toward the intestinal surface.',
       options: { bullet: { indent: 16 } } },
   ], { x: 6.1, y: 5.06, w: 6.3, h: 1.14, fontSize: 14, color: C.text2, isTextBox: true,
-       margin: 0, valign: 'middle', paraSpaceAfter: 6 });
+       margin: 0, valign: 'middle', paraSpaceAfter: 6, objectName: 'intes_b' });
   s.addNotes('Bile salts matter most for lipophilic, poorly soluble (BCS class II) drugs.');
 }
 
@@ -488,7 +498,8 @@ pres.addSection({ title: 'Clinical examples' });
               'Formulated as a delayed-release, enteric-coated dosage form.',
               'Protects the drug from gastric acid.'],
     { x: M + 0.42, y: 2.6, w: 4.96, h: 1.44, size: 14, gap: 6 });
-  s.addImage({ path: IMG('enteric'), x: 1.21, y: 4.0, w: 4.8, h: 2.4 });
+  s.addImage({ path: GIF('enteric_3d'), x: 1.31, y: 4.02, w: 4.6, h: 2.4,
+    objectName: 'ent3d' });
   // Ketoconazole
   card(s, { x: 6.84, y: 1.56, w: 5.78, h: 4.94, fill: { color: C.background2 }, line: null, flat: true });
   iconCircle(s, { x: 7.24, y: 1.84, d: 0.66, icon: 'acid', color: C.accent4 });
@@ -502,12 +513,14 @@ pres.addSection({ title: 'Clinical examples' });
   steps.forEach((st, i) => {
     const y = 4.06 + i * 0.82;
     s.addShape(pres.ShapeType.roundRect, { x: 7.26, y, w: 4.94, h: 0.66, rectRadius: 0.12,
-      fill: { color: C.background1 }, line: { color: st[2], width: 1 } });
-    iconCircle(s, { x: 7.42, y: y + 0.07, d: 0.52, icon: st[0], color: st[2] });
+      fill: { color: C.background1 }, line: { color: st[2], width: 1 },
+      objectName: 'k' + i + '_bg' });
+    iconCircle(s, { x: 7.42, y: y + 0.07, d: 0.52, icon: st[0], color: st[2], tag: 'k' + i });
     s.addText(st[1], { x: 8.08, y, w: 4.0, h: 0.66, fontSize: 14.5, bold: true, color: C.text1,
-      valign: 'middle', isTextBox: true, margin: 0 });
+      valign: 'middle', isTextBox: true, margin: 0, objectName: 'k' + i + '_t' });
     if (i < 2) s.addShape(pres.ShapeType.triangle, { x: 9.61, y: y + 0.7, w: 0.24, h: 0.1,
-      fill: { color: C.accent6 }, line: { type: 'none' }, rotate: 180 });
+      fill: { color: C.accent6 }, line: { type: 'none' }, rotate: 180,
+      objectName: 'k' + i + '_ar' });
   });
   s.addNotes('Omeprazole is protected from acid; ketoconazole needs acid. Opposite formulation problems.');
 }
@@ -525,20 +538,22 @@ pres.addSection({ title: 'Clinical examples' });
               + 'large surface area.'],
     { x: M + 0.42, y: 2.66, w: 4.96, h: 1.9, size: 14, gap: 6 });
   s.addShape(pres.ShapeType.roundRect, { x: M + 0.42, y: 4.66, w: 4.96, h: 1.56, rectRadius: 0.13,
-    fill: { color: C.accent2, transparency: 86 }, line: { type: 'none' } });
-  iconCircle(s, { x: M + 0.74, y: 5.1, d: 0.68, icon: 'intestine', color: C.accent1 });
+    fill: { color: C.accent2, transparency: 86 }, line: { type: 'none' }, objectName: 'surf_bg' });
+  iconCircle(s, { x: M + 0.74, y: 5.1, d: 0.68, icon: 'intestine', color: C.accent1,
+    tag: 'surf' });
   s.addText([
     { text: 'Surface area wins', options: { bold: true, fontSize: 14.5, breakLine: true } },
     { text: 'Site of absorption is not decided by pH alone.', options: { fontSize: 13.5 } },
   ], { x: M + 1.62, y: 4.82, w: 3.6, h: 1.24, color: C.text1, valign: 'middle',
-       isTextBox: true, margin: 0, lineSpacingMultiple: 1.1 });
+       isTextBox: true, margin: 0, lineSpacingMultiple: 1.1, objectName: 'surf_t' });
   card(s, { x: 6.84, y: 1.56, w: 5.78, h: 4.94, fill: { color: C.background1 }, line: null });
   iconCircle(s, { x: 7.24, y: 1.84, d: 0.66, icon: 'exchange', color: C.accent5 });
   heading(s, 'Tetracyclines', { x: 8.08, y: 1.88, w: 4.2, size: 20, color: C.accent5 });
   bullets(s, ['Can form complexes with calcium, iron, and magnesium.',
               'This can reduce drug absorption.'],
     { x: 7.26, y: 2.66, w: 4.96, h: 1.0, size: 14, gap: 6 });
-  s.addImage({ path: IMG('chelation'), x: 7.65, y: 3.72, w: 4.16, h: 2.6 });
+  s.addImage({ path: GIF('chelation_3d'), x: 7.65, y: 3.76, w: 4.16, h: 2.54,
+    objectName: 'che3d' });
   s.addNotes('Counsel patients: separate tetracyclines from dairy products, antacids and iron tablets.');
 }
 
@@ -628,12 +643,16 @@ pres.addSection({ title: 'Closing' });
   take.forEach((t, i) => {
     const y = 1.92 + i * 1.18;
     s.addShape(pres.ShapeType.roundRect, { x: M, y, w: 9.1, h: 1.0, rectRadius: 0.12,
-      fill: { color: C.accent1, transparency: 70 }, line: { type: 'none' } });
-    iconCircle(s, { x: M + 0.28, y: y + 0.19, d: 0.62, icon: t[0], color: C.accent2 });
+      fill: { color: C.accent1, transparency: 70 }, line: { type: 'none' },
+      objectName: 'tk' + i + '_bg' });
+    iconCircle(s, { x: M + 0.28, y: y + 0.19, d: 0.62, icon: t[0], color: C.accent2,
+      tag: 'tk' + i });
     s.addText(t[1], { x: M + 1.08, y: y + 0.12, w: 7.8, h: 0.4, fontSize: 16, bold: true,
-      color: C.background1, valign: 'middle', isTextBox: true, margin: 0 });
+      color: C.background1, valign: 'middle', isTextBox: true, margin: 0,
+      objectName: 'tk' + i + '_t' });
     s.addText(t[2], { x: M + 1.08, y: y + 0.5, w: 7.8, h: 0.38, fontSize: 13,
-      color: C.accent2, valign: 'middle', isTextBox: true, margin: 0 });
+      color: C.accent2, valign: 'middle', isTextBox: true, margin: 0,
+      objectName: 'tk' + i + '_s' });
   });
   s.addNotes('Close on the mechanism, not the drug list: pH and secretions act through four properties.');
 }
@@ -648,7 +667,7 @@ pres.addSection({ title: 'Closing' });
     fill: { color: C.accent2, transparency: 84 }, line: { type: 'none' } });
   s.addImage({ path: IMG('gi_mark'), x: 9.05, y: 1.18, w: 3.4, h: 5.06, objectName: '!!mark' });
   s.addText('THANK YOU', { placeholder: 'kicker' });
-  s.addText('Questions are welcome', { placeholder: 'title', objectName: '!!deckTitle' });
+  s.addText('Questions are welcome', { placeholder: 'title' });
   s.addText([
     { text: 'Name:  ', options: { color: C.background1, bold: true } },
     { text: '______________________', options: { color: C.accent2, breakLine: true } },
@@ -659,11 +678,59 @@ pres.addSection({ title: 'Closing' });
   s.addNotes('Thank the audience and invite questions.');
 }
 
+/* ===================== animation manifest =====================
+   Every step auto-starts (after the previous one) so nothing can stay hidden
+   if the presenter does not click. Shapes listed together animate as a unit. */
+const EFFECTS = {
+  1: [
+    { shapes: ['hero3d'], effect: 'zoom', dur: 900, delay: 0 },
+    // placeholders carry no objectName, so they are addressed by layout idx
+    { shapes: ['ph:100'], effect: 'fade', dur: 500, delay: 350 },
+    { shapes: ['ph:101'], effect: 'floatUp', dur: 700, delay: 650 },
+    { shapes: ['ph:102'], effect: 'fade', dur: 600, delay: 1250 },
+  ],
+  8: [
+    { shapes: ['mem3d'], effect: 'fade', dur: 800, delay: 0 },
+    { shapes: ['un_bg', 'un_ic', 'un_ici', 'un_h', 'un_t'], effect: 'floatUp',
+      dur: 600, delay: 450 },
+    { shapes: ['io_bg', 'io_ic', 'io_ici', 'io_h', 'io_t'], effect: 'floatUp',
+      dur: 600, delay: 850 },
+    { shapes: ['mem_cap'], effect: 'fade', dur: 500, delay: 1300 },
+  ],
+  13: [
+    { shapes: ['bile_bg', 'bile_ic', 'bile_ici', 'bile_h', 'bile_b'], effect: 'floatUp',
+      dur: 600, delay: 0 },
+    { shapes: ['mic3d'], effect: 'zoom', dur: 800, delay: 400 },
+    { shapes: ['intes_bg', 'intes_ic', 'intes_ici', 'intes_h', 'intes_b'], effect: 'floatUp',
+      dur: 600, delay: 900 },
+  ],
+  15: [
+    { shapes: ['ent3d'], effect: 'fade', dur: 800, delay: 0 },
+    { shapes: ['k0_bg', 'k0_ic', 'k0_ici', 'k0_t'], effect: 'floatUp', dur: 500, delay: 500 },
+    { shapes: ['k1_bg', 'k1_ic', 'k1_ici', 'k1_t', 'k0_ar'], effect: 'floatUp',
+      dur: 500, delay: 950 },
+    { shapes: ['k2_bg', 'k2_ic', 'k2_ici', 'k2_t', 'k1_ar'], effect: 'floatUp',
+      dur: 500, delay: 1400 },
+  ],
+  16: [
+    { shapes: ['che3d'], effect: 'zoom', dur: 800, delay: 0 },
+    { shapes: ['surf_bg', 'surf_ic', 'surf_ici', 'surf_t'], effect: 'floatUp',
+      dur: 600, delay: 500 },
+  ],
+  19: [0, 1, 2, 3].map(i => ({
+    shapes: ['tk' + i + '_bg', 'tk' + i + '_ic', 'tk' + i + '_ici',
+             'tk' + i + '_t', 'tk' + i + '_s'],
+    effect: 'floatUp', dur: 550, delay: i * 400,
+  })),
+};
+
 /* ===================== write ===================== */
 pres.writeFile({ fileName: OUT })
   .then(() => applyTheme(OUT, THEME))
   .then(() => {
-    require('fs').writeFileSync(path.join(__dirname, 'transitions.json'), JSON.stringify(TRANS));
+    const fs = require('fs');
+    fs.writeFileSync(path.join(__dirname, 'transitions.json'), JSON.stringify(TRANS));
+    fs.writeFileSync(path.join(__dirname, 'effects.json'), JSON.stringify(EFFECTS, null, 1));
     console.log('wrote', OUT, '\nslides:', TRANS.length, '\ntransitions:', TRANS.join(','));
   })
   .catch(e => { console.error('FAILED:', e); process.exit(1); });
