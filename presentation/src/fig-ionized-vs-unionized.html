@@ -1,0 +1,94 @@
+<!doctype html><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1340px;background:#fff;font-family:'DejaVu Sans',sans-serif;color:#0B2B32;padding:32px 36px}
+.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0E7C86;
+     padding-bottom:14px;margin-bottom:22px;gap:30px}
+h1{font-size:36px;white-space:nowrap}
+.sub{font-size:18px;color:#5B7B7E;letter-spacing:2px;text-align:left;line-height:1.4}
+.scene{position:relative;height:500px;width:1268px}
+.chip{position:absolute;padding:9px 20px;border-radius:30px;font-size:21px;font-weight:700}
+.mol{position:absolute;direction:ltr;font-size:30px;font-weight:700;text-align:center;width:120px}
+.cap{position:absolute;font-weight:700;text-align:center}
+.cards{display:flex;gap:26px;margin-top:14px}
+.card{flex:1;border-radius:18px;padding:22px 26px}
+.card h3{font-size:25px;margin-bottom:12px}
+.card li{list-style:none;font-size:20px;margin:11px 0;display:flex;align-items:center;gap:12px}
+.ic{width:28px;height:28px;border-radius:50%;color:#fff;font-size:17px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;flex:0 0 28px}
+.ok{background:#0E7C86}.no{background:#C8553D}.mid{background:#E8A33D}
+.foot{margin-top:22px;background:#0B2B32;color:#fff;border-radius:16px;padding:20px 28px;
+      font-size:24px;font-weight:700;text-align:center}
+.foot span{color:#17B3A3}
+</style>
+<body dir="rtl">
+<div class="hdr">
+  <h1>المتأيّن وغير المتأيّن — مَن يَعبر الغشاء؟</h1>
+  <div class="sub" dir="ltr">IONIZED vs.<br>UNIONIZED</div>
+</div>
+
+<div class="scene">
+<svg width="1268" height="500" style="position:absolute;inset:0">
+  <defs>
+    <marker id="ag" markerUnits="userSpaceOnUse" markerWidth="30" markerHeight="30"
+            refX="26" refY="15" orient="auto"><path d="M0 2 L28 15 L0 28 z" fill="#17B3A3"/></marker>
+    <marker id="ar" markerUnits="userSpaceOnUse" markerWidth="30" markerHeight="30"
+            refX="26" refY="15" orient="auto"><path d="M0 2 L28 15 L0 28 z" fill="#C8553D"/></marker>
+  </defs>
+  <rect x="0" y="52" width="1268" height="168" rx="14" fill="#E6F2F0" opacity=".55"/>
+  <rect x="0" y="330" width="1268" height="150" rx="14" fill="#E6F2F0" opacity=".3"/>
+  <line x1="634" y1="44" x2="634" y2="492" stroke="#9FB6B8" stroke-width="2" stroke-dasharray="7 9"/>
+  <g id="bilayer"></g>
+  <path d="M968 166 L968 356" stroke="#17B3A3" stroke-width="10" stroke-linecap="round" marker-end="url(#ag)"/>
+  <circle cx="968" cy="112" r="48" fill="#fff" stroke="#0E7C86" stroke-width="7"/>
+  <circle cx="968" cy="408" r="40" fill="#C9ECE6" stroke="#0E7C86" stroke-width="5"/>
+  <path d="M300 166 L300 200" stroke="#C8553D" stroke-width="10" stroke-linecap="round" marker-end="url(#ar)"/>
+  <circle cx="300" cy="112" r="48" fill="#fff" stroke="#C8553D" stroke-width="7"/>
+  <circle cx="342" cy="76" r="20" fill="#C8553D"/>
+  <path d="M333 76 h18" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="300" cy="262" r="46" fill="#fff" opacity=".92"/>
+  <path d="M276 238 L324 286 M324 238 L276 286" stroke="#C8553D" stroke-width="12" stroke-linecap="round"/>
+  <g fill="#A9C4D3">
+    <circle cx="206" cy="80" r="10"/><circle cx="392" cy="146" r="9"/>
+    <circle cx="224" cy="156" r="8"/><circle cx="378" cy="62" r="8"/><circle cx="196" cy="140" r="7"/>
+  </g>
+</svg>
+<div class="chip" style="right:0;top:0;background:#DCF0ED;color:#0E7C86">غير متأيّن — بلا شحنة · Unionized</div>
+<div class="chip" style="left:0;top:0;background:#FBEAE5;color:#C8553D">متأيّن — يحمل شحنة · Ionized</div>
+<div class="mol" style="right:240px;top:94px;color:#0E7C86">HA</div>
+<div class="mol" style="left:240px;top:94px;color:#C8553D">A⁻</div>
+<div class="mol" style="right:240px;top:392px;color:#0E7C86;font-size:24px">HA</div>
+<div class="cap" style="right:128px;top:458px;width:344px;font-size:21px;color:#0E7C86">
+  يَعبر ← يصل إلى الدم</div>
+<div class="cap" style="left:60px;top:344px;width:480px;font-size:21px;color:#C8553D">
+  يرتدّ ← يبقى في سوائل الجهاز الهضمي</div>
+<div style="position:absolute;left:6px;top:182px;width:248px;font-size:17px;font-weight:700;color:#E8A33D">
+  الغشاء الدهني · Lipid bilayer</div>
+</div>
+
+<div class="cards">
+  <div class="card" style="background:#DCF0ED">
+    <h3 style="color:#0E7C86">غير المتأيّن (Unionized)</h3>
+    <li><span class="ic ok">✓</span> ذائب في الدهون — lipid soluble</li>
+    <li><span class="ic ok">✓</span> يعبر الغشاء الخلوي بسهولة</li>
+    <li><span class="ic mid">!</span> ذوبانه في الماء أقل</li>
+  </div>
+  <div class="card" style="background:#FBEAE5">
+    <h3 style="color:#C8553D">المتأيّن (Ionized)</h3>
+    <li><span class="ic ok">✓</span> ذائب في الماء — water soluble</li>
+    <li><span class="ic no">✗</span> نفاذيته عبر الغشاء ضعيفة</li>
+    <li><span class="ic mid">!</span> لكنه ضروري ليذوب الدواء أولاً</li>
+  </div>
+</div>
+
+<div class="foot">الدواء يحتاج الحالتين معًا: <span>يذوب</span> في سوائل الأمعاء (متأيّن) ثم <span>يَعبر</span> الغشاء (غير متأيّن)</div>
+
+<script>
+let s='';
+for(let x=18;x<1268;x+=36){
+  s+=`<circle cx="${x}" cy="232" r="14" fill="#F6D9A8" stroke="#E8A33D" stroke-width="3"/>`
+   + `<path d="M${x-5} 248 l0 36 M${x+5} 248 l0 36" stroke="#E8A33D" stroke-width="4" stroke-linecap="round"/>`
+   + `<circle cx="${x}" cy="300" r="14" fill="#F6D9A8" stroke="#E8A33D" stroke-width="3"/>`;
+}
+document.getElementById('bilayer').innerHTML=s;
+</script>
